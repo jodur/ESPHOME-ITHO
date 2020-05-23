@@ -1,0 +1,118 @@
+esphome:
+  name: fancontrol
+  platform: ESP8266
+  board: nodemcuv2
+  includes: 
+    - itho.h
+  libraries: 
+    - https://github.com/jodur/ITHO-Lib.git
+ 
+ #Set ID from remotes that are used, so you can identify the root of the last State change
+  on_boot:
+    then:
+      - lambda: |-
+          Idlist[0]={"69:9a:aa:bb:cc:dd:ee:ff","Badkamer"};
+          Idlist[1]={"65:59:aa:bb:cc:dd:ee:ff","Toilet"};
+          Idlist[2]={"ID3","ID3"};
+          Mydeviceid="MY_ESPHOME";
+wifi:
+  ssid: <YOURSSID>
+  password: <YOURPASSWORD>
+
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "FALLBACK AP"
+    password: "jdsh348201"
+
+captive_portal:
+
+# Enable logging
+logger:
+
+
+# Enable Home Assistant API
+api:
+
+ota:
+
+switch:
+- platform: custom
+  lambda: |-
+    auto fansendlow = new FanSendLow();
+    App.register_component(fansendlow);
+    return {fansendlow};
+
+  switches:
+    name: "FanSendLow"
+
+- platform: custom
+  lambda: |-
+    auto fansendmedium = new FanSendMedium();
+    App.register_component(fansendmedium);
+    return {fansendmedium};
+
+  switches:
+    name: "FanSendMedium"
+
+- platform: custom
+  lambda: |-
+    auto fansendhigh = new FanSendHigh();
+    App.register_component(fansendhigh);
+    return {fansendhigh};
+
+  switches:
+    name: "FanSendHigh"
+
+- platform: custom
+  lambda: |-
+    auto fansendt1 = new FanSendIthoTimer1();
+    App.register_component(fansendt1);
+    return {fansendt1};
+
+  switches:
+    name: "FanSendTimer1"
+
+- platform: custom
+  lambda: |-
+    auto fansendt2 = new FanSendIthoTimer2();
+    App.register_component(fansendt2);
+    return {fansendt2};
+
+  switches:
+    name: "FanSendTimer2"
+
+- platform: custom
+  lambda: |-
+    auto fansendt3 = new FanSendIthoTimer3();
+    App.register_component(fansendt3);
+    return {fansendt3};
+
+  switches:
+    name: "FanSendTimer3"
+
+- platform: custom
+  lambda: |-
+    auto fansendjoin = new FanSendIthoJoin();
+    App.register_component(fansendjoin);
+    return {fansendjoin};
+  switches:
+    name: "FanSendJoin"
+
+text_sensor:
+- platform: custom
+  lambda: |-
+    auto fanrecv = new FanRecv();
+    App.register_component(fanrecv);
+    return {fanrecv->fanspeed,fanrecv->fantimer,fanrecv->Lastid};
+  text_sensors:
+    - name: "fanspeed"
+      icon: "mdi:transfer"   
+    - name: "fantimer"
+      icon: "mdi:timer"  
+    - name: "lastid"
+
+  
+      
+
+ 

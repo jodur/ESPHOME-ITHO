@@ -1,0 +1,29 @@
+fan:
+  - platform: template
+    fans:
+      mechanical_ventilation:
+        friendly_name: "Mechanical Ventilation"
+        value_template: >
+          {{ "off" if states('sensor.fanspeed') == 'Low' else "on" }}
+        speed_template: "{{ states('sensor.fanspeed') }}"
+        turn_on:
+          service: switch.turn_on
+          data:
+            entity_id: switch.fansendhigh
+        turn_off:
+          service: switch.turn_on
+          data:
+            entity_id: switch.fansendlow
+        set_speed:
+          service: switch.turn_on
+          data_template:
+            entity_id: >
+              {% set mapper = { 'Timer 1':'switch.fansendtimer1','Timer 2':'switch.fansendtimer2','Timer 3':'switch.fansendtimer3','High':'switch.fansendhigh', 'Medium':'switch.fansendmedium', 'Low':'switch.fansendlow' } %}
+              {{ mapper[speed] if speed in mapper else switch.fansendlow }}
+        speeds:
+          - 'Low'
+          - 'Medium'
+          - 'High'
+          - 'Timer 1'
+          - 'Timer 2'
+          - 'Timer 3'
