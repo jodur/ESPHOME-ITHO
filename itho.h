@@ -21,7 +21,6 @@ IdDict Idlist[] = { {"ID1", "Controller Room1"},
 					{"ID3",	"Controller Room3"}
 				};
 
-
 IthoCC1101 rf;
 void ITHOinterrupt() ICACHE_RAM_ATTR;
 void ITHOcheck();
@@ -67,14 +66,6 @@ String TextSensorfromState(int currentState)
 		return "Full";
 		break;
 	}
-}
-
-String RemoteId(String rfremoteid)
-{
-	if (rfremoteid == Idlist[0].Id) return Idlist[0].Roomname;
-	else if (rfremoteid == Idlist[1].Id) return Idlist[1].Roomname;
-	else if (rfremoteid == Idlist[2].Id) return Idlist[2].Roomname;
-	else return rfremoteid;
 }
 
 
@@ -252,62 +243,76 @@ void ITHOinterrupt() {
 	ITHOticker.once_ms(10, ITHOcheck);
 }
 
+
+int RFRemoteIndex(String rfremoteid)
+{
+	if (rfremoteid == Idlist[0].Id) return 0;
+	else if (rfremoteid == Idlist[1].Id) return 1;
+	else if (rfremoteid == Idlist[2].Id) return 2;
+	else return -1;
+}
+
+
 void ITHOcheck() {
   noInterrupts(); // disable new interrupts
   if (rf.checkForNewPacket()) {
     IthoCommand cmd = rf.getLastCommand();
 	String Id = rf.getLastIDstr();
-    switch (cmd) {
-      case IthoUnknown:
-        ESP_LOGV("custom", "Unknown command");
-        break;
-      case IthoLow:
-        ESP_LOGD("custom", "IthoLow");
-        State = 1;
-        Timer = 0;
-		LastID = RemoteId(Id);
-        break;
-      case IthoMedium:
-        ESP_LOGD("custom", "Medium");
-        State = 2;
-        Timer = 0;
-		LastID = RemoteId(Id);
-        break;
-      case IthoHigh:
-        ESP_LOGD("custom", "High");
-        State = 3;
-        Timer = 0;
-		LastID = RemoteId(Id);
-        break;
-      case IthoFull:
-        ESP_LOGD("custom", "Full");
-        State = 4;
-        Timer = 0;
-		LastID = RemoteId(Id);
-        break;
-      case IthoTimer1:
-        ESP_LOGD("custom", "Timer1");
-        State = 13;
-        Timer = Time1;
-		LastID = RemoteId(Id);
-        break;
-      case IthoTimer2:
-        ESP_LOGD("custom", "Timer2");
-        State = 23;
-        Timer = Time2;
-		LastID = RemoteId(Id);
-        break;
-      case IthoTimer3:
-        ESP_LOGD("custom", "Timer3");
-        State = 33;
-        Timer = Time3;
-		LastID = RemoteId(Id);
-        break;
-      case IthoJoin:
-        break;
-      case IthoLeave:
-        break;
-    }
+	int index = RFRemoteIndex(Id);
+	if ( index>=0) { // Only accept commands that are in the list
+		switch (cmd) {
+		case IthoUnknown:
+			ESP_LOGV("custom", "Unknown command");
+			break;
+		case IthoLow:
+			ESP_LOGD("custom", "IthoLow");
+			State = 1;
+			Timer = 0;
+			LastID = Idlist[index].Roomname;
+			break;
+		case IthoMedium:
+			ESP_LOGD("custom", "Medium");
+			State = 2;
+			Timer = 0;
+			LastID = Idlist[index].Roomname;
+			break;
+		case IthoHigh:
+			ESP_LOGD("custom", "High");
+			State = 3;
+			Timer = 0;
+			LastID = Idlist[index].Roomname;
+			break;
+		case IthoFull:
+			ESP_LOGD("custom", "Full");
+			State = 4;
+			Timer = 0;
+			LastID = Idlist[index].Roomname;
+			break;
+		case IthoTimer1:
+			ESP_LOGD("custom", "Timer1");
+			State = 13;
+			Timer = Time1;
+			LastID = Idlist[index].Roomname;
+			break;
+		case IthoTimer2:
+			ESP_LOGD("custom", "Timer2");
+			State = 23;
+			Timer = Time2;
+			LastID = Idlist[index].Roomname;
+			break;
+		case IthoTimer3:
+			ESP_LOGD("custom", "Timer3");
+			State = 33;
+			Timer = Time3;
+			LastID = Idlist[index].Roomname;
+			break;
+		case IthoJoin:
+			break;
+		case IthoLeave:
+			break;
+		}
+	}
+	else ESP_LOGV("Ignored device-id: ", Id);
   }
   interrupts(); //enable interrupts
 }

@@ -15,6 +15,7 @@ esphome:
           Idlist[1]={"65:59:aa:bb:cc:dd:ee:ff","Toilet"};
           Idlist[2]={"ID3","ID3"};
           Mydeviceid="MY_ESPHOME";
+          id(swfan_low).turn_on(); //This ensures fan is at low-speed at boot
 wifi:
   ssid: <YOURSSID>
   password: <YOURPASSWORD>
@@ -29,7 +30,7 @@ captive_portal:
 
 # Enable logging
 logger:
-
+#  level: VERBOSE #Enable this line to find out the ID of youre remote
 
 # Enable Home Assistant API
 api:
@@ -45,6 +46,7 @@ switch:
 
   switches:
     name: "FanSendLow"
+    id: swfan_low
 
 - platform: custom
   lambda: |-
