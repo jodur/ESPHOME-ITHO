@@ -312,7 +312,7 @@ void ITHOcheck() {
 			break;
 		}
 	}
-	else ESP_LOGV("Ignored device-id: ", Id);
+	else ESP_LOGV("custom","Ignored device-id: %s", Id.c_str());
   }
   interrupts(); //enable interrupts
 }
