@@ -101,6 +101,22 @@ switch:
   switches:
     name: "FanSendJoin"
 
+- platform: template
+  name: "Disable ITHO, allow OTA"
+  lambda: |-
+    return EnableItho;
+  turn_on_action:
+    - lambda: |-
+        EnableItho = true;
+        detachInterrupt(D1);
+        ESP_LOGI("custom", "Disabled ITHO, to allow OTA (otherwise 'Ticker' library will fail OTA)");
+  turn_off_action:
+    - lambda: |-
+        EnableItho = true;
+        attachInterrupt(D1, ITHOinterrupt, RISING);
+        rf.initReceive();
+        ESP_LOGI("custom", "Enabled ITHO again");
+
 text_sensor:
 - platform: custom
   lambda: |-
