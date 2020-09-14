@@ -39,6 +39,9 @@ String Mydeviceid = "ESPHOME"; // should be changed in boot call,to set user spe
 long LastPublish=0; 
 bool InitRunned = false;
 
+// Variable to check if we have disabled ITHO, to allow OTA
+bool EnableItho = false;
+
 // Timer values for hardware timer in Fan
 #define Time1      10*60
 #define Time2      20*60
