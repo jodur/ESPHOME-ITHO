@@ -112,7 +112,7 @@ switch:
         ESP_LOGI("custom", "Disabled ITHO, to allow OTA (otherwise 'Ticker' library will fail OTA)");
   turn_off_action:
     - lambda: |-
-        EnableItho = true;
+        EnableItho = false;
         attachInterrupt(D1, ITHOinterrupt, RISING);
         rf.initReceive();
         ESP_LOGI("custom", "Enabled ITHO again");
