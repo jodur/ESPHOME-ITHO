@@ -5,6 +5,9 @@ esphome:
   includes: 
     - itho.h
   libraries: 
+  libraries: 
+    - SPI
+    - Ticker
     - https://github.com/jodur/ITHO-Lib.git
  
  #Set ID from remotes that are used, so you can identify the root of the last State change
