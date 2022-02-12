@@ -39,6 +39,12 @@ logger:
 api:
 
 ota:
+  on_begin:
+    then:
+      - lambda: |-
+          ESP_LOGI("custom", "Disabled Interrupts, to allow OTA (otherwise 'Ticker' library will fail OTA)");
+          detachInterrupt(D1);
+          delay(500);
 
 switch:
 - platform: custom

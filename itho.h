@@ -20,7 +20,6 @@ IdDict Idlist[] = { {"ID1", "Controller Room1"},
 					{"ID2",	"Controller Room2"},
 					{"ID3",	"Controller Room3"}
 				};
-
 IthoCC1101 rf;
 void ITHOinterrupt() ICACHE_RAM_ATTR;
 void ITHOcheck();
@@ -86,7 +85,7 @@ class FanRecv : public PollingComponent {
     void setup()
 	{
 	  InsReffanspeed = this->fanspeed; // Make textsensor outside class available, so it can be used in Interrupt Service Routine
-      rf.init();
+	  rf.init();
       // Followin wiring schema, change PIN if you wire differently
       pinMode(D1, INPUT);
       attachInterrupt(D1, ITHOinterrupt, RISING);
@@ -312,7 +311,7 @@ void ITHOcheck() {
 			break;
 		}
 	}
-	else ESP_LOGV("custom","Ignored device-id: %s", Id.c_str());
+	else ESP_LOGV("Ignored device-id:", Id.c_str());
   }
   interrupts(); //enable interrupts
 }
