@@ -1,6 +1,5 @@
 #include "esphome.h"
 #include "IthoCC1101.h"
-#include "Ticker.h"
 
 
 //List of States:
@@ -26,11 +25,13 @@ void ITHOcheck();
 
 // extra for interrupt handling
 bool ITHOhasPacket = false;
-Ticker ITHOticker;
+
+// init states
 int State=1; // after startup it is assumed that the fan is running low
 int OldState=1;
 int Timer=0;
 
+// init ID's
 String LastID;
 String OldLastID;
 String Mydeviceid = "ESPHOME"; // should be changed in boot call,to set user specific
@@ -88,12 +89,18 @@ class FanRecv : public PollingComponent {
 	  rf.init();
       // Followin wiring schema, change PIN if you wire differently
       pinMode(D1, INPUT);
-      attachInterrupt(D1, ITHOinterrupt, RISING);
-      //attachInterrupt(D1, ITHOcheck, RISING);
+      attachInterrupt(D1, ITHOinterrupt, FALLING);
       rf.initReceive();
 	  InitRunned = true;
     }
-
+    void loop() override
+	{
+		if (ITHOhasPacket)  // When Signal (from ISR) packet received, process packet 
+		{
+			ITHOhasPacket=  false;
+			ITHOcheck();
+		}
+	}
     void update() override
 	{
 		if (State >= 10)
@@ -131,7 +138,10 @@ public:
 
 	void write_state(bool state) override {
 		if (state) {
+			noInterrupts();
 			rf.sendCommand(IthoLow);
+			interrupts();
+			rf.initReceive();
 			State = 1;
 			Timer = 0;
 			LastID = Mydeviceid;
@@ -145,7 +155,10 @@ class FanSendMedium : public Component, public Switch {
 
     void write_state(bool state) override {
       if ( state ) {
+		noInterrupts();  
         rf.sendCommand(IthoMedium);
+		interrupts();
+		rf.initReceive();
         State = 2;
         Timer = 0;
 		LastID = Mydeviceid;
@@ -159,7 +172,10 @@ public:
 
 	void write_state(bool state) override {
 		if (state) {
+			noInterrupts();
 			rf.sendCommand(IthoHigh);
+			interrupts();
+			rf.initReceive();
 			State = 3;
 			Timer = 0;
 			LastID = Mydeviceid;
@@ -173,7 +189,10 @@ public:
 
 	void write_state(bool state) override {
 		if (state) {
+			noInterrupts();
 			rf.sendCommand(IthoFull);
+			interrupts();
+			rf.initReceive();
 			State = 4;
 			Timer = 0;
 			LastID = Mydeviceid;
@@ -187,7 +206,10 @@ class FanSendIthoTimer1 : public Component, public Switch {
 
     void write_state(bool state) override {
       if ( state ) {
+		noInterrupts();  
         rf.sendCommand(IthoTimer1);
+		interrupts();
+		rf.initReceive();
         State = 13;
         Timer = Time1;
 		LastID = Mydeviceid;
@@ -201,7 +223,10 @@ class FanSendIthoTimer2 : public Component, public Switch {
 
     void write_state(bool state) override {
       if ( state ) {
+		noInterrupts();  
         rf.sendCommand(IthoTimer2);
+		interrupts();
+		rf.initReceive();
         State = 23;
         Timer = Time2;
 		LastID = Mydeviceid;
@@ -215,7 +240,10 @@ class FanSendIthoTimer3 : public Component, public Switch {
 
     void write_state(bool state) override {
       if ( state ) {
+		noInterrupts();  
         rf.sendCommand(IthoTimer3);
+		interrupts();
+		rf.initReceive();
         State = 33;
         Timer = Time3;
 		LastID = Mydeviceid;
@@ -229,7 +257,10 @@ class FanSendIthoJoin : public Component, public Switch {
 
     void write_state(bool state) override {
       if ( state ) {
+		noInterrupts();  
         rf.sendCommand(IthoJoin);
+		interrupts();
+		rf.initReceive();
         State = 1111;
         Timer = 0;
         publish_state(!state);
@@ -238,8 +269,10 @@ class FanSendIthoJoin : public Component, public Switch {
 };
 
 
-void ITHOinterrupt() {
-	ITHOticker.once_ms(10, ITHOcheck);
+void ITHOinterrupt()
+{
+	// Signal ITHO received  something
+	ITHOhasPacket = true;
 }
 
 
@@ -264,18 +297,21 @@ void ITHOcheck() {
 			ESP_LOGV("custom", "Unknown command");
 			break;
 		case IthoLow:
+		case DucoLow:
 			ESP_LOGD("custom", "IthoLow");
 			State = 1;
 			Timer = 0;
 			LastID = Idlist[index].Roomname;
 			break;
 		case IthoMedium:
+		case DucoMedium:
 			ESP_LOGD("custom", "Medium");
 			State = 2;
 			Timer = 0;
 			LastID = Idlist[index].Roomname;
 			break;
 		case IthoHigh:
+		case DucoHigh:
 			ESP_LOGD("custom", "High");
 			State = 3;
 			Timer = 0;
@@ -311,7 +347,7 @@ void ITHOcheck() {
 			break;
 		}
 	}
-	else ESP_LOGV("Ignored device-id:", Id.c_str());
+	else ESP_LOGV("","Ignored device-id: %s", Id.c_str());
   }
   interrupts(); //enable interrupts
 }

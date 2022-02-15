@@ -1,28 +1,29 @@
 esphome:
   name: fancontrol
-  platform: ESP8266
-  board: nodemcuv2
   includes: 
     - itho.h
   libraries: 
-  libraries: 
     - SPI
-    - Ticker
-    - https://github.com/jodur/ITHO-Lib.git
+    - https://github.com/jodur/ITHO-Lib#NewLib
  
  #Set ID from remotes that are used, so you can identify the root of the last State change
   on_boot:
     then:
       - lambda: |-
-          Idlist[0]={"69:9a:aa:bb:cc:dd:ee:ff","Badkamer"};
-          Idlist[1]={"65:59:aa:bb:cc:dd:ee:ff","Toilet"};
+          Idlist[0]={"51,40,61","Badkamer"};
+          Idlist[1]={"73,82,11","Toilet"};
           Idlist[2]={"ID3","ID3"};
-          Mydeviceid="MY_ESPHOME";
+          Mydeviceid="Homeassistant"; 
+          rf.setDeviceID(10,87,81); //ID for sending: 10,87,81 was used in old library
           id(swfan_low).turn_on(); //This ensures fan is at low-speed at boot
+esp8266:
+  board: d1_mini
+  framework:
+    version: recommended
+                    
 wifi:
   ssid: <YOURSSID>
   password: <YOURPASSWORD>
-
 
   # Enable fallback hotspot (captive portal) in case wifi connection fails
   ap:
@@ -42,7 +43,7 @@ ota:
   on_begin:
     then:
       - lambda: |-
-          ESP_LOGI("custom", "Disabled Interrupts, to allow OTA (otherwise 'Ticker' library will fail OTA)");
+          ESP_LOGI("custom", "Disable Interrupts, to allow OTA without intterupts");
           detachInterrupt(D1);
           delay(500);
 
