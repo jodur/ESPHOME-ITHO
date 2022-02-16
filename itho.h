@@ -62,8 +62,12 @@ String TextSensorfromState(int currentState)
 		break;
 	case 13: case 23: case 33:
 		return "High(T)";
+		break;
 	case 4: 
 		return "Full";
+		break;
+	default:
+	    return "Unknow";
 		break;
 	}
 }
