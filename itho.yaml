@@ -46,14 +46,21 @@ ota:
           ESP_LOGI("custom", "Disable Interrupts, to allow OTA without intterupts");
           detachInterrupt(D1);
           delay(500);
-
 switch:
+- platform: custom
+  lambda: |-
+    auto fansendstandby = new FanSendStandby();
+    App.register_component(fansendstandby);
+    return {fansendstandby};
+  switches:
+    name: "FanSendStandby"
+    id: swfan_standby
+
 - platform: custom
   lambda: |-
     auto fansendlow = new FanSendLow();
     App.register_component(fansendlow);
     return {fansendlow};
-
   switches:
     name: "FanSendLow"
     id: swfan_low
@@ -63,45 +70,45 @@ switch:
     auto fansendmedium = new FanSendMedium();
     App.register_component(fansendmedium);
     return {fansendmedium};
-
   switches:
     name: "FanSendMedium"
+    id: swfan_medium
 
 - platform: custom
   lambda: |-
     auto fansendhigh = new FanSendHigh();
     App.register_component(fansendhigh);
     return {fansendhigh};
-
   switches:
     name: "FanSendHigh"
+    id: swfan_high
 
 - platform: custom
   lambda: |-
     auto fansendt1 = new FanSendIthoTimer1();
     App.register_component(fansendt1);
     return {fansendt1};
-
   switches:
     name: "FanSendTimer1"
+    id: swfan_timer1
 
 - platform: custom
   lambda: |-
     auto fansendt2 = new FanSendIthoTimer2();
     App.register_component(fansendt2);
     return {fansendt2};
-
   switches:
     name: "FanSendTimer2"
+    id: swfan_timer2
 
 - platform: custom
   lambda: |-
     auto fansendt3 = new FanSendIthoTimer3();
     App.register_component(fansendt3);
     return {fansendt3};
-
   switches:
     name: "FanSendTimer3"
+    id: swfan_timer3
 
 - platform: custom
   lambda: |-
@@ -110,6 +117,7 @@ switch:
     return {fansendjoin};
   switches:
     name: "FanSendJoin"
+    id: swfan_join
 
 text_sensor:
 - platform: custom
@@ -123,7 +131,6 @@ text_sensor:
     - name: "fantimer"
       icon: "mdi:timer"  
     - name: "lastid"
-
   
       
 
