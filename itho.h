@@ -4,6 +4,7 @@
 
 //List of States:
 
+// 0 - Itho ventilation Standby
 // 1 - Itho ventilation unit to lowest speed
 // 2 - Itho ventilation unit to medium speed
 // 3 - Itho ventilation unit to high speed
@@ -20,7 +21,7 @@ IdDict Idlist[] = { {"ID1", "Controller Room1"},
 					{"ID3",	"Controller Room3"}
 				};
 IthoCC1101 rf;
-void ITHOinterrupt() ICACHE_RAM_ATTR;
+void ITHOinterrupt() IRAM_ATTR;
 void ITHOcheck();
 
 // extra for interrupt handling
@@ -51,6 +52,9 @@ String TextSensorfromState(int currentState)
 {
 	switch (currentState)
 	{
+	case 0: 
+		return "Standby";
+		break;
 	case 1: 
 		return "Low";
 		break;
@@ -136,6 +140,22 @@ class FanRecv : public PollingComponent {
 //       timer 1 (10 minutes), 2 (20), 3 (30)
 // To optimize testing, reset published state immediately so you can retrigger (i.e. momentarily button press)
 
+class FanSendStandby : public Component, public Switch {
+public:
+
+	void write_state(bool state) override {
+		if (state) {
+			noInterrupts();
+			rf.sendCommand(IthoStandby);
+			interrupts();
+			rf.initReceive();
+			State = 0;
+			Timer = 0;
+			LastID = Mydeviceid;
+			publish_state(!state);
+		}
+	}
+};
 
 class FanSendLow : public Component, public Switch {
 public:
@@ -299,6 +319,13 @@ void ITHOcheck() {
 		switch (cmd) {
 		case IthoUnknown:
 			ESP_LOGV("custom", "Unknown command");
+			break;
+		case IthoStandby:
+		case DucoStandby:
+			ESP_LOGD("custom", "IthoStandby");
+			State = 0;
+			Timer = 0;
+			LastID = Idlist[index].Roomname;
 			break;
 		case IthoLow:
 		case DucoLow:
