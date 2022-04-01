@@ -20,7 +20,7 @@ IdDict Idlist[] = { {"ID1", "Controller Room1"},
 					{"ID3",	"Controller Room3"}
 				};
 IthoCC1101 rf;
-void ITHOinterrupt() ICACHE_RAM_ATTR;
+void ITHOinterrupt() IRAM_ATTR;
 void ITHOcheck();
 
 // extra for interrupt handling
@@ -349,6 +349,8 @@ void ITHOcheck() {
 			break;
 		case IthoLeave:
 			break;
+		default:
+		    break;
 		}
 	}
 	else ESP_LOGV("","Ignored device-id: %s", Id.c_str());
