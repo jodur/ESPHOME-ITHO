@@ -4,7 +4,7 @@
 
 //List of States:
 
-// 0 - Itho ventilation Standby
+// 0 - Itho ventilation unit to standby speed
 // 1 - Itho ventilation unit to lowest speed
 // 2 - Itho ventilation unit to medium speed
 // 3 - Itho ventilation unit to high speed
@@ -53,7 +53,7 @@ String TextSensorfromState(int currentState)
 	switch (currentState)
 	{
 	case 0: 
-		return "Standby";
+		return "Off";
 		break;
 	case 1: 
 		return "Low";
@@ -139,6 +139,7 @@ class FanRecv : public PollingComponent {
 // send: low, medium, high, full
 //       timer 1 (10 minutes), 2 (20), 3 (30)
 // To optimize testing, reset published state immediately so you can retrigger (i.e. momentarily button press)
+
 
 class FanSendStandby : public Component, public Switch {
 public:
