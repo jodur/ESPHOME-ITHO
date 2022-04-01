@@ -17,8 +17,8 @@ typedef struct { String Id; String Roomname; } IdDict;
 
 // Global struct to store Names, should be changed in boot call,to set user specific
 IdDict Idlist[] = { {"ID1", "Controller Room1"},
-					{"ID2",	"Controller Room2"},
-					{"ID3",	"Controller Room3"}
+		    {"ID2", "Controller Room2"},
+		    {"ID3", "Controller Room3"}
 				};
 IthoCC1101 rf;
 void ITHOinterrupt() IRAM_ATTR;
