@@ -66,6 +66,7 @@ switch:
 
   switches:
     name: "FanSendMedium"
+    id: swfan_medium
 
 - platform: custom
   lambda: |-
@@ -75,6 +76,7 @@ switch:
 
   switches:
     name: "FanSendHigh"
+    id: swfan_high
 
 - platform: custom
   lambda: |-
@@ -124,7 +126,31 @@ text_sensor:
       icon: "mdi:timer"  
     - name: "lastid"
 
-  
-      
+fan:
+  - platform: speed
+    output: outputswitch
+    name: "ITHO Fan"
+    speed_count: 2
+    
 
- 
+
+output:
+  - platform: template
+    id: outputswitch
+    type: float
+    write_action:
+      - if:
+          condition:
+            lambda: return ((state == 0) );
+          then:
+            - switch.turn_on: swfan_low
+      - if:
+          condition:
+            lambda: return ((state == 0.50) );
+          then:
+            - switch.turn_on: swfan_medium
+      - if:
+          condition:
+            lambda: return ((state == 1) );
+          then:
+            - switch.turn_on: swfan_high 
