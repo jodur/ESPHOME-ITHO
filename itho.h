@@ -67,7 +67,7 @@ String TextSensorfromState(int currentState)
 		return "Full";
 		break;
 	default:
-	    return "Unknow";
+	    return "Unknown";
 		break;
 	}
 }
