@@ -1,0 +1,114 @@
+esphome:
+  # MODIFY: place your own names here
+  name: 1-badkamerafzuiging
+  friendly_name: 1_Badkamer/afzuiging
+
+  libraries: 
+    - SPI
+    - https://github.com/jodur/ITHO-Lib#NewLib
+
+  # Set ID from remotes that are used, so you can identify the root of the last State change
+  on_boot:
+    then:
+      - lambda: |-
+          Idlist[0]={"74,d1,45","Badkamer"};
+          Idlist[1]={"74,d7,67","Toilet"};
+          Idlist[2]={"ID3","ID3"};
+          Mydeviceid="Homeassistant"; 
+          rf.setDeviceID(10,87,81); //ID for sending: 10,87,81 was used in old library
+          id(swfan_low).turn_on(); //This ensures fan is at low-speed at boot
+
+esp8266:
+  board: d1_mini
+
+wifi:
+  # MODIFY: set your own ssid and passwords
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  # MODIFY: Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "ITHO fallback"
+    password: "<YOUR_PASSWORD>"
+
+captive_portal:
+  
+# Enable logging
+logger:
+  # MODIFY: Enable the line below to find out the ID of youre remote
+  #level: VERBOSE 
+
+# Enable Home Assistant API
+api:
+  encryption:
+    # MODIFY: set your own encryption key if desired
+    #key: "<ENCRYPTION_KEY>"
+
+ota:
+  platform: esphome
+  on_begin:
+    then:
+      - lambda: |-
+          ESP_LOGI("custom", "Disable Interrupts, to allow OTA without intterupts");
+          detachInterrupt(D1);
+          delay(500);
+
+external_components:
+  - source:
+      type: local
+      path: ./components
+    components: [itho]
+
+switch:
+  - platform: itho
+    type: fan_send_low
+    name: "FanSendLow"
+    id: swfan_low
+
+  - platform: itho
+    type: fan_send_medium
+    name: "FanSendMedium"
+
+  - platform: itho
+    type: fan_send_high
+    name: "FanSendHigh"
+
+  - platform: itho
+    type: fan_send_timer1
+    name: "FanSendTimer1"
+
+  - platform: itho
+    type: fan_send_timer2
+    name: "FanSendTimer2"
+
+  - platform: itho
+    type: fan_send_timer3
+    name: "FanSendTimer3"
+
+  - platform: itho
+    type: fan_send_join
+    name: "FanSendJoin"
+
+text_sensor:
+  - platform: template
+    id: sensor_fanspeed
+    name: "FanSpeed"
+    icon: "mdi:transfer"
+
+  - platform: template
+    id: sensor_fantimer
+    name: "FanTimer"
+    icon: "mdi:timer"
+
+  - platform: template
+    id: sensor_lastid
+    name: "LastID"
+    icon: "mdi:identifier"
+
+  - platform: itho
+    type: fan_recv
+    name: "Fan"
+    id: itho_recv_main
+    fanspeed_id: sensor_fanspeed
+    fantimer_id: sensor_fantimer
+    lastid_id: sensor_lastid
