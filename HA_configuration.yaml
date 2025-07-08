@@ -1,23 +1,22 @@
-fan:
-  - platform: template
-    fans:
-      afzuiging_badkamer:
-        friendly_name: "Afzuiging badkamer"
-        value_template: >
+template:
+  - fan:
+      - name: "Afzuiging badkamer"
+        unique_id: "afzuiging_badkamer"
+        state: >
           {{ "off" if states('sensor.fanspeed') == 'Low' else "on" }}
-        percentage_template: >
+        percentage: >
           {% set speedperc = {'Low': 0, 'Medium': 50, 'High': 100, 'High(T)': 100} %}
           {{speedperc [states('sensor.fanspeed')]}}
         turn_on:
-          service: switch.turn_on
+          action: switch.turn_on
           data:
             entity_id: switch.fansendhigh
         turn_off:
-          service: switch.turn_on
+          action: switch.turn_on
           data:
-            entity_id: switch.fansendlow    
-        set_percentage: 
-          service: switch.turn_on
+            entity_id: switch.fansendlow
+        set_percentage:
+          action: switch.turn_on
           data:
             entity_id: >
               {% set id_mapp = {0:'switch.fansendlow',50:'switch.fansendmedium', 100:'switch.fansendhigh'} %}
