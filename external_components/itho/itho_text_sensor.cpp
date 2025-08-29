@@ -13,27 +13,27 @@ bool InitRunned = false;
 // helper-function 
 String TextSensorfromState(int currentState)
 {
-    switch (currentState)
-    {
-      case 1:  return "Low";
-      case 2:  return "Medium";
-      case 3:  return "High";
-      case 4:  return "Full";
-      case 13:
-      case 23:
-      case 33: return "High(T)";
-      default: return "Unknown";
-    }
+  switch (currentState)
+  {
+    case 1:  return "Low";
+    case 2:  return "Medium";
+    case 3:  return "High";
+    case 4:  return "Full";
+    case 13:
+    case 23:
+    case 33: return "High(T)";
+    default: return "Unknown";
+  }
 }
 
 
-// Update timer every 1 second
 FanRecv::FanRecv()
   : TextSensor(), PollingComponent()
   , fanspeed(new text_sensor::TextSensor())
   , fantimer(new text_sensor::TextSensor())
   , Lastid(new text_sensor::TextSensor())
 {
+  // Make sure polling-interval (= calling of update()) is set to 1 second
   PollingComponent::set_update_interval(1000);
 }
 

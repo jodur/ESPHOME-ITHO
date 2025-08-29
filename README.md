@@ -10,3 +10,5 @@
  
 ## ESPHOME version ≥2025.2.0
 From version 2025.2.0, custom components are no longer supported (see https://esphome.io/changelog/2025.2.0). Instead we need to use external components, for which the code can reside local or in the cloud. Code has been rewritten to use local external components.
+
+In ESPHome 2025.11.0, switch.SWITCH_SCHEMA will be removed. This issue still has to be addressed in an upcoming commit.
