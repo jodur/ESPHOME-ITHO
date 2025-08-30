@@ -1,5 +1,5 @@
 // Location of this file:
-//  ./components/itho/itho_text_sensor.h
+//  ./external_components/itho/itho_text_sensor.h
 #pragma once
 #include "esphome/core/component.h"
 #include "esphome/components/text_sensor/text_sensor.h"
@@ -31,5 +31,5 @@ class FanRecv : public text_sensor::TextSensor, public PollingComponent {
   text_sensor::TextSensor *Lastid;    // Last id that has issued the current state
 };
 
-}  // namespace itho
-}  // namespace esphome
+} // namespace itho
+} // namespace esphome

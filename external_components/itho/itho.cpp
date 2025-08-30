@@ -1,5 +1,5 @@
 // Location of this file:
-//  ./components/itho/itho.cpp
+//  ./external_components/itho/itho.cpp
 #include "itho.h"
 
 // Global struct to store Names, should be changed in boot call, to set user specific

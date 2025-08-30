@@ -1,4 +1,4 @@
-# ./components/itho/text_sensor.py
+# ./external_components/itho/text_sensor.py
 
 import esphome.codegen as cg
 import esphome.config_validation as cv
@@ -31,12 +31,6 @@ typed_schemas = {
     })
     for key, cls in TYPES.items()
 }
-# typed_schemas = {
-#     key: text_sensor.text_sensor_schema(FanRecv).extend({
-#         cv.GenerateID(): cv.declare_id(cls),
-#     })
-#     for key, cls in TYPES.items()
-# }
 
 CONFIG_SCHEMA = cv.typed_schema(
     typed_schemas,
@@ -44,24 +38,9 @@ CONFIG_SCHEMA = cv.typed_schema(
     default_type="fan_recv"
 )
 
-# CONFIG_SCHEMA = cv.typed_schema(
-#     {
-#         "fan_recv": text_sensor.text_sensor_schema(FanRecv).extend({
-#             cv.GenerateID(): cv.declare_id(FanRecv),
-#         })
-#     },
-#     key=CONF_TYPE,
-#     default_type="fan_recv"
-# )
-
 ICON = "icon"
 
 async def to_code(config):
-#    var_cls = TYPES[config[CONF_TYPE]]
-#    var = cg.new_Pvariable(config[CONF_ID], var_cls())
-#    await cg.register_component(var, config)
-#    await text_sensor.register_text_sensor(var, config)
-    
     var = cg.new_Pvariable(config[CONF_ID])
     await cg.register_component(var, config)
 

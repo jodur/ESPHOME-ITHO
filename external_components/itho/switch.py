@@ -1,4 +1,4 @@
-# ./components/itho/switch.py
+# ./external_components/itho/switch.py
 
 import esphome.codegen as cg
 import esphome.config_validation as cv
@@ -32,9 +32,7 @@ TYPES = {
 
 # Per-type schemas
 typed_schemas = {
-    key: switch.SWITCH_SCHEMA.extend({
-        cv.GenerateID(): cv.declare_id(cls),
-    })
+    key: switch.switch_schema(cls).extend({})
     for key, cls in TYPES.items()
 }
 
@@ -46,5 +44,6 @@ CONFIG_SCHEMA = cv.typed_schema(
 async def to_code(config):
     var_cls = TYPES[config[CONF_TYPE]]
     var = cg.new_Pvariable(config[CONF_ID], var_cls())
+
     await cg.register_component(var, config)
     await switch.register_switch(var, config)

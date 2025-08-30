@@ -1,5 +1,5 @@
 // Location of this file:
-//  ./components/itho/itho_text_sensor.cpp
+//  ./external_components/itho/itho_text_sensor.cpp
 #include "itho_text_sensor.h"
 #include "itho.h"
 

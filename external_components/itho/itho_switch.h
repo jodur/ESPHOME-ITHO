@@ -1,5 +1,5 @@
 // Location of this file:
-//  ./components/itho/itho_switch.h
+//  ./external_components/itho/itho_switch.h
 #pragma once
 #include "esphome/core/component.h"
 #include "esphome/components/switch/switch.h"

@@ -1,5 +1,5 @@
 // Location of this file:
-//  ./components/itho/itho.h
+//  ./external_components/itho/itho.h
 #pragma once
 #include "esphome.h"
 #include "IthoCC1101.h"

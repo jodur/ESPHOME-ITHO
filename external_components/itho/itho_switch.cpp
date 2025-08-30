@@ -1,5 +1,5 @@
 // Location of this file:
-//  ./components/itho/itho_switch.cpp
+//  ./external_components/itho/itho_switch.cpp
 #include "itho_switch.h"
 #include "itho.h"
 
