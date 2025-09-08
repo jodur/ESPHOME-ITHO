@@ -113,7 +113,7 @@ void FanSendIthoTimer3::write_state(bool state)
   if (state)
   {
     noInterrupts();  
-    rf.sendCommand(IthoTimer2);
+    rf.sendCommand(IthoTimer3);
     interrupts();
     rf.initReceive();
     State = 33;

@@ -23,4 +23,3 @@ fan:
               {% set id_mapp = {0:'switch.fansendlow',50:'switch.fansendmedium', 100:'switch.fansendhigh'} %}
               {{id_mapp[percentage]}}
         speed_count: 2
-        
