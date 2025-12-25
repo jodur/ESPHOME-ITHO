@@ -1,0 +1,298 @@
+#include "itho_fan.h"
+#include "esphome/core/log.h"
+#include "esphome/core/application.h"
+
+namespace esphome {
+namespace itho_fan {
+
+static const char *const TAG = "itho_fan";
+
+// Timer constants
+static const int TIME_10MIN = 10 * 60;
+static const int TIME_20MIN = 20 * 60;
+static const int TIME_30MIN = 30 * 60;
+
+// Global reference for interrupt handler
+static IthoFanHub *global_itho_hub = nullptr;
+
+void IRAM_ATTR itho_interrupt_handler() {
+  if (global_itho_hub != nullptr) {
+    global_itho_hub->has_packet_ = true;
+  }
+}
+
+// IthoFanHub Implementation
+
+void IthoFanHub::setup() {
+  ESP_LOGCONFIG(TAG, "Setting up Itho Fan Hub...");
+  
+  global_itho_hub = this;
+  
+  rf_.init();
+  pinMode(interrupt_pin_, INPUT);
+  attachInterrupt(digitalPinToInterrupt(interrupt_pin_), itho_interrupt_handler, FALLING);
+  rf_.initReceive();
+  
+  // Set device ID for sending
+  uint8_t id[3];
+  sscanf(device_id_.c_str(), "%hhu,%hhu,%hhu", &id[0], &id[1], &id[2]);
+  rf_.setDeviceID(id[0], id[1], id[2]);
+  
+  init_complete_ = true;
+  
+  ESP_LOGCONFIG(TAG, "Itho Fan Hub setup complete");
+}
+
+void IthoFanHub::loop() {
+  if (has_packet_) {
+    has_packet_ = false;
+    process_packet();
+  }
+  
+  // Handle timer countdown
+  static uint32_t last_update = 0;
+  uint32_t now = millis();
+  
+  if (now - last_update >= 1000) {
+    last_update = now;
+    
+    if (state_ >= 10 && timer_ > 0) {
+      timer_--;
+      
+      if (timer_ <= 0) {
+        set_state(1, 0, last_id_);
+      }
+      
+      if (fan_ != nullptr) {
+        fan_->update_state();
+      }
+    }
+  }
+}
+
+void IthoFanHub::dump_config() {
+  ESP_LOGCONFIG(TAG, "Itho Fan Hub:");
+  ESP_LOGCONFIG(TAG, "  Device ID: %s", device_id_.c_str());
+  ESP_LOGCONFIG(TAG, "  Interrupt Pin: %d", interrupt_pin_);
+  ESP_LOGCONFIG(TAG, "  Registered Remotes: %d", remotes_.size());
+  for (const auto &remote : remotes_) {
+    ESP_LOGCONFIG(TAG, "    - ID: %s, Room: %s", remote.id.c_str(), remote.room_name.c_str());
+  }
+}
+
+void IthoFanHub::set_device_id(uint8_t id1, uint8_t id2, uint8_t id3) {
+  char buffer[16];
+  snprintf(buffer, sizeof(buffer), "%d,%d,%d", id1, id2, id3);
+  device_id_ = buffer;
+}
+
+void IthoFanHub::add_remote_id(const std::string &id, const std::string &room_name) {
+  remotes_.push_back({id, room_name});
+}
+
+void IthoFanHub::set_interrupt_pin(uint8_t pin) {
+  interrupt_pin_ = pin;
+}
+
+void IthoFanHub::send_command(uint8_t command) {
+  noInterrupts();
+  
+  switch (command) {
+    case 1:
+      rf_.sendCommand(IthoLow);
+      set_state(1, 0, device_id_);
+      break;
+    case 2:
+      rf_.sendCommand(IthoMedium);
+      set_state(2, 0, device_id_);
+      break;
+    case 3:
+      rf_.sendCommand(IthoHigh);
+      set_state(3, 0, device_id_);
+      break;
+    case 4:
+      rf_.sendCommand(IthoFull);
+      set_state(4, 0, device_id_);
+      break;
+    case 13:
+      rf_.sendCommand(IthoTimer1);
+      set_state(13, TIME_10MIN, device_id_);
+      break;
+    case 23:
+      rf_.sendCommand(IthoTimer2);
+      set_state(23, TIME_20MIN, device_id_);
+      break;
+    case 33:
+      rf_.sendCommand(IthoTimer3);
+      set_state(33, TIME_30MIN, device_id_);
+      break;
+  }
+  
+  interrupts();
+  rf_.initReceive();
+  
+  if (fan_ != nullptr) {
+    fan_->update_state();
+  }
+}
+
+void IthoFanHub::set_state(int state, int timer, const std::string &id) {
+  state_ = state;
+  timer_ = timer;
+  last_id_ = id;
+}
+
+int IthoFanHub::get_remote_index(const std::string &id) {
+  for (size_t i = 0; i < remotes_.size(); i++) {
+    if (remotes_[i].id == id) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+void IthoFanHub::process_packet() {
+  noInterrupts();
+  
+  if (rf_.checkForNewPacket()) {
+    IthoCommand cmd = rf_.getLastCommand();
+    std::string id = rf_.getLastIDstr();
+    
+    int index = get_remote_index(id);
+    
+    if (index >= 0) {
+      std::string room_name = remotes_[index].room_name;
+      
+      switch (cmd) {
+        case IthoLow:
+        case DucoLow:
+          ESP_LOGD(TAG, "Received Low from %s", room_name.c_str());
+          set_state(1, 0, room_name);
+          break;
+        case IthoMedium:
+        case DucoMedium:
+          ESP_LOGD(TAG, "Received Medium from %s", room_name.c_str());
+          set_state(2, 0, room_name);
+          break;
+        case IthoHigh:
+        case DucoHigh:
+          ESP_LOGD(TAG, "Received High from %s", room_name.c_str());
+          set_state(3, 0, room_name);
+          break;
+        case IthoFull:
+          ESP_LOGD(TAG, "Received Full from %s", room_name.c_str());
+          set_state(4, 0, room_name);
+          break;
+        case IthoTimer1:
+          ESP_LOGD(TAG, "Received Timer1 from %s", room_name.c_str());
+          set_state(13, TIME_10MIN, room_name);
+          break;
+        case IthoTimer2:
+          ESP_LOGD(TAG, "Received Timer2 from %s", room_name.c_str());
+          set_state(23, TIME_20MIN, room_name);
+          break;
+        case IthoTimer3:
+          ESP_LOGD(TAG, "Received Timer3 from %s", room_name.c_str());
+          set_state(33, TIME_30MIN, room_name);
+          break;
+        default:
+          break;
+      }
+      
+      if (fan_ != nullptr) {
+        fan_->update_state();
+      }
+    } else {
+      ESP_LOGV(TAG, "Ignored device-id: %s", id.c_str());
+    }
+  }
+  
+  interrupts();
+}
+
+// IthoFan Implementation
+
+void IthoFan::setup() {
+  ESP_LOGCONFIG(TAG, "Setting up Itho Fan...");
+  
+  // Initialize with low speed
+  this->state = true;
+  this->speed = 1;
+  
+  update_state();
+}
+
+void IthoFan::dump_config() {
+  ESP_LOGCONFIG(TAG, "Itho Fan");
+  LOG_FAN("", "Itho Fan", this);
+}
+
+fan::FanTraits IthoFan::get_traits() {
+  auto traits = fan::FanTraits(false, true, false, 4);
+  traits.set_supported_preset_modes({"Timer 10min", "Timer 20min", "Timer 30min"});
+  return traits;
+}
+
+void IthoFan::control(const fan::FanCall &call) {
+  if (hub_ == nullptr) {
+    return;
+  }
+  
+  if (call.get_state().has_value()) {
+    this->state = *call.get_state();
+    if (!this->state) {
+      // Turn off = set to low
+      hub_->send_command(1);
+    }
+  }
+  
+  if (call.get_speed().has_value()) {
+    this->speed = *call.get_speed();
+    hub_->send_command(this->speed);
+  }
+  
+  if (call.get_preset_mode().has_value()) {
+    std::string preset = *call.get_preset_mode();
+    if (preset == "Timer 10min") {
+      hub_->send_command(13);
+    } else if (preset == "Timer 20min") {
+      hub_->send_command(23);
+    } else if (preset == "Timer 30min") {
+      hub_->send_command(33);
+    }
+  }
+  
+  this->publish_state();
+}
+
+void IthoFan::update_state() {
+  if (hub_ == nullptr) {
+    return;
+  }
+  
+  int state = hub_->get_state();
+  
+  // Map state to fan speed
+  if (state >= 10) {
+    // Timer mode - treat as high speed
+    this->speed = 3;
+    
+    // Set preset based on timer state
+    if (state == 13) {
+      this->preset_mode = "Timer 10min";
+    } else if (state == 23) {
+      this->preset_mode = "Timer 20min";
+    } else if (state == 33) {
+      this->preset_mode = "Timer 30min";
+    }
+  } else {
+    this->preset_mode = {};
+    this->speed = state;
+  }
+  
+  this->state = (state > 0);
+  this->publish_state();
+}
+
+}  // namespace itho_fan
+}  // namespace esphome
