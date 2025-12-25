@@ -23,3 +23,4 @@ async def to_code(config):
 
     hub = await cg.get_variable(config[CONF_ID])
     cg.add(var.set_hub(hub))
+    cg.add(hub.register_fan(var))
