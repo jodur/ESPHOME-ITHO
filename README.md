@@ -213,18 +213,21 @@ If you're upgrading from the old C++ custom component:
 |---------------------------|------------------------|
 | External C++ component | Native ESPHome CC1101 |
 | `itho_fan` component | Standard `fan` template |
-| Hex device IDs (0x0A) | Decimal IDs (10) |
-| Component configuration | YAML lambda functions |
+| Lambda in `on_boot` | `on_packet` trigger |
+| `Idlist` array | `allowed_remotes` array |
+| `rf.setDeviceID()` | `substitutions` |
 | Compile time: ~45s | Compile time: ~5-50s |
 
 ### Migration Steps
 
 1. **Backup** your old configuration
 2. **Replace** your entire configuration with `itho.yaml`
-3. **Convert IDs** from hex to decimal:
-   - Old: `device_id: "0x0A,0x57,0x51"`
-   - New: `device_id: "10, 87, 81"`
-4. **Update remote IDs** in the `allowed_remotes` array (around line 120)
+3. **Move device ID** to substitutions at the top:
+   - Old: `rf.setDeviceID(10,87,81);` in lambda
+   - New: `device_id: "10, 87, 81"` in substitutions
+4. **Update remote IDs** in the `allowed_remotes` array (around line 120):
+   - Old: `Idlist[0]={"51,40,61","Badkamer"};`
+   - New: `{"51,40,61", "Badkamer"},`
 5. **Create** `secrets.yaml` with WiFi credentials
 6. **Flash** the new firmware
 
@@ -236,8 +239,8 @@ The fan entity name and functionality remain the same, so your Home Assistant au
 - ✅ **Pure YAML Implementation**: Removed all external C++ components
 - ✅ **Native CC1101**: Uses ESPHome's built-in CC1101 component
 - ✅ **Verified Protocol**: Applied correct Itho RF settings from community examples
-- ✅ **Decimal Format**: User-friendly decimal IDs instead of hex
-- ✅ **Array Configuration**: Cleaner device ID setup
+- ✅ **Simplified Configuration**: Substitutions instead of lambda initialization
+- ✅ **Cleaner Structure**: `on_packet` trigger instead of `on_boot` lambda
 
 ### New Features
 - ✅ **Device Whitelist**: Security feature - only accept known remotes
