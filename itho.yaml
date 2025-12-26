@@ -1,77 +1,206 @@
+# Pure YAML Itho ventilation control using ESPHome CC1101 component
+# No external components needed!
+
 esphome:
-  name: fancontrol
+  name: itho-fan
 
 esp8266:
   board: d1_mini
-  framework:
-    version: recommended
 
-external_components:
-  - source:
-      type: local
-      path: components
-    components: [itho_fan]
+# Enable logging
+logger:
+  level: DEBUG
 
-itho_fan:
-  id: itho_hub
-  device_id: "10,87,81"
-  interrupt_pin: D1
-  remote_ids:
-    - remote_id: "51,40,61"
-      room_name: "Badkamer"
-    - remote_id: "73,82,11"
-      room_name: "Toilet"
+# Enable Home Assistant API
+api:
 
-fan:
-  - platform: itho_fan
-    id: itho_fan_component
-    itho_hub_id: itho_hub
-    name: "Itho Ventilation"
-
-text_sensor:
-  - platform: template
-    name: "Fan Timer Remaining"
-    id: fan_timer
-    icon: "mdi:timer"
-    lambda: |-
-      if (id(itho_hub).get_timer() > 0) {
-        int minutes = id(itho_hub).get_timer() / 60;
-        int seconds = id(itho_hub).get_timer() % 60;
-        char buffer[20];
-        sprintf(buffer, "%d:%02d", minutes, seconds);
-        return {buffer};
-      }
-      return {"0"};
-    update_interval: 1s
-    
-  - platform: template
-    name: "Last Control Source"
-    id: last_controller
-    icon: "mdi:remote"
-    lambda: |-
-      return {id(itho_hub).get_last_id()};
-    update_interval: 1s
+ota:
+  platform: esphome
 
 wifi:
   ssid: !secret wifi_ssid
   password: !secret wifi_password
   ap:
-    ssid: "FALLBACK AP"
-    password: "jdsh348201"
+    ssid: "Itho Fan Fallback"
+    password: "fallback123"
 
 captive_portal:
 
-logger:
-  level: DEBUG
+# SPI configuration for CC1101
+spi:
+  clk_pin: D5   # GPIO14
+  mosi_pin: D7  # GPIO13
+  miso_pin: D6  # GPIO12
 
-api:
+# CC1101 RF transceiver configuration
+cc1101:
+  id: cc1101_transceiver
+  cs_pin: D8        # GPIO15
+  gdo0_pin: D1      # GPIO5
+  frequency: 868.299MHz
+  modulation_type: ASK/OOK
+  sync_mode: None
+  packet_mode: false
+  
+  # Handle incoming packets
+  on_packet:
+    - lambda: |-
+        ESP_LOGD("itho", "Received packet, RSSI: %.1f dBm, Size: %d", rssi, x.size());
+        
+        // TODO: Decode Itho protocol here
+        // For now just log the raw packet
+        std::string hex = "";
+        for (auto b : x) {
+          char buf[4];
+          sprintf(buf, "%02X ", b);
+          hex += buf;
+        }
+        ESP_LOGD("itho", "Packet: %s", hex.c_str());
+        
+        // Example: detect commands based on packet patterns
+        // This is simplified - real Itho decoding is more complex
+        // You would check for specific byte sequences that match commands
 
-ota:
-  - platform: esphome
-    on_begin:
+globals:
+  - id: fan_speed
+    type: int
+    restore_value: no
+    initial_value: '1'
+  - id: fan_timer
+    type: int
+    restore_value: no
+    initial_value: '0'
+  - id: last_source
+    type: std::string
+    restore_value: no
+    initial_value: '"System"'
+
+# Template fan for control
+fan:
+  - platform: template
+    id: itho_ventilation
+    name: "Itho Ventilation"
+    speed_count: 4
+    preset_modes:
+      - "Timer 10min"
+      - "Timer 20min"
+      - "Timer 30min"
+    
+    # Turn on/off
+    on_turn_on:
       then:
         - lambda: |-
-            ESP_LOGI("custom", "Disabling interrupts for OTA");
-            if (id(itho_hub).get_interrupt_pin() != nullptr) {
-              id(itho_hub).get_interrupt_pin()->detach_interrupt();
+            // Send LOW speed command via CC1101
+            std::vector<uint8_t> packet = {
+              // Simplified Itho LOW command packet
+              // Real implementation needs proper Manchester encoding
+              0x16, 0xA4, 0x10, 0x87, 0x81,  // Header + Device ID
+              0x22, 0xF3, 0x04, 0x00, 0x00, 0x04  // LOW command
+            };
+            id(cc1101_transceiver).transmit_packet(packet);
+            id(fan_speed) = 1;
+    
+    on_turn_off:
+      then:
+        - lambda: |-
+            // Turn off = send LOW speed
+            std::vector<uint8_t> packet = {
+              0x16, 0xA4, 0x10, 0x87, 0x81,
+              0x22, 0xF3, 0x04, 0x00, 0x00, 0x04
+            };
+            id(cc1101_transceiver).transmit_packet(packet);
+            id(fan_speed) = 1;
+    
+    # Speed control
+    on_speed_set:
+      then:
+        - lambda: |-
+            int speed = id(itho_ventilation).speed;
+            std::vector<uint8_t> packet;
+            
+            // Base packet structure
+            packet.push_back(0x16);  // Preamble
+            packet.push_back(0xA4);  // Sync
+            packet.push_back(0x10);  // Device ID byte 1
+            packet.push_back(0x87);  // Device ID byte 2
+            packet.push_back(0x81);  // Device ID byte 3
+            
+            // Command bytes based on speed
+            if (speed == 1) {
+              // LOW: 0x22, 0xF3, 0x04, 0x00, 0x00, 0x04
+              packet.insert(packet.end(), {0x22, 0xF3, 0x04, 0x00, 0x00, 0x04});
+            } else if (speed == 2) {
+              // MEDIUM: 0x22, 0xF3, 0x03, 0x00, 0x00, 0x03
+              packet.insert(packet.end(), {0x22, 0xF3, 0x03, 0x00, 0x00, 0x03});
+            } else if (speed == 3) {
+              // HIGH: 0x22, 0xF3, 0x02, 0x00, 0x00, 0x02
+              packet.insert(packet.end(), {0x22, 0xF3, 0x02, 0x00, 0x00, 0x02});
+            } else if (speed == 4) {
+              // FULL: 0x22, 0xF3, 0x01, 0x00, 0x00, 0x01
+              packet.insert(packet.end(), {0x22, 0xF3, 0x01, 0x00, 0x00, 0x01});
             }
+            
+            id(cc1101_transceiver).transmit_packet(packet);
+            id(fan_speed) = speed;
+            ESP_LOGD("itho", "Sent speed %d command", speed);
+    
+    # Preset modes (timers)
+    on_preset_set:
+      then:
+        - lambda: |-
+            std::string preset = id(itho_ventilation).get_preset_mode();
+            std::vector<uint8_t> packet = {0x16, 0xA4, 0x10, 0x87, 0x81};
+            
+            if (preset == "Timer 10min") {
+              packet.insert(packet.end(), {0x22, 0xF3, 0x31, 0x00, 0x00, 0x31});
+              id(fan_timer) = 600;
+            } else if (preset == "Timer 20min") {
+              packet.insert(packet.end(), {0x22, 0xF3, 0x32, 0x00, 0x00, 0x32});
+              id(fan_timer) = 1200;
+            } else if (preset == "Timer 30min") {
+              packet.insert(packet.end(), {0x22, 0xF3, 0x33, 0x00, 0x00, 0x33});
+              id(fan_timer) = 1800;
+            }
+            
+            id(cc1101_transceiver).transmit_packet(packet);
+            ESP_LOGD("itho", "Sent timer command: %s", preset.c_str());
+
+# Text sensors for status
+text_sensor:
+  - platform: template
+    name: "Fan Timer Remaining"
+    id: timer_display
+    icon: "mdi:timer"
+    lambda: |-
+      if (id(fan_timer) > 0) {
+        int minutes = id(fan_timer) / 60;
+        int seconds = id(fan_timer) % 60;
+        char buffer[20];
+        sprintf(buffer, "%d:%02d", minutes, seconds);
+        return {buffer};
+      }
+      return {"Off"};
+    update_interval: 1s
+    
+  - platform: template
+    name: "Last Control Source"
+    id: controller_name
+    icon: "mdi:remote"
+    lambda: |-
+      return {id(last_source)};
+
+# Timer countdown (runs every second)
+interval:
+  - interval: 1s
+    then:
+      - lambda: |-
+          if (id(fan_timer) > 0) {
+            id(fan_timer)--;
+            if (id(fan_timer) == 0) {
+              // Timer expired, return to low speed
+              ESP_LOGD("itho", "Timer expired, returning to low speed");
+              auto call = id(itho_ventilation).make_call();
+              call.set_speed(1);
+              call.perform();
+            }
+          }
