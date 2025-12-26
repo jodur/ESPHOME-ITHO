@@ -2,14 +2,27 @@
 
 #include "esphome/core/component.h"
 #include "esphome/components/fan/fan.h"
-#include "esphome/core/hal.h"
-#include "esphome/core/gpio.h"
-#include "IthoCC1101.h"
+#include "esphome/components/cc1101/cc1101.h"
 #include <vector>
 #include <string>
 
 namespace esphome {
 namespace itho_fan {
+
+// Itho Command Definitions
+enum class IthoCommand : uint8_t {
+  UNKNOWN = 0,
+  JOIN = 1,
+  LEAVE = 2,
+  STANDBY = 3,
+  LOW = 4,
+  MEDIUM = 5,
+  HIGH = 6,
+  FULL = 7,
+  TIMER1 = 8,
+  TIMER2 = 9,
+  TIMER3 = 10,
+};
 
 struct RemoteInfo {
   std::string id;
@@ -22,40 +35,35 @@ class IthoFanHub : public Component {
   void loop() override;
   void dump_config() override;
   
+  void set_cc1101(cc1101::CC1101Component *cc1101) { cc1101_ = cc1101; }
   void set_device_id(uint8_t id1, uint8_t id2, uint8_t id3);
   void add_remote_id(const std::string &id, const std::string &room_name);
-  void set_interrupt_pin(InternalGPIOPin *pin) { interrupt_pin_ = pin; }
   
-  void send_command(uint8_t command);
+  void send_command(IthoCommand command);
   
   int get_state() const { return state_; }
   int get_timer() const { return timer_; }
   std::string get_last_id() const { return last_id_; }
-  InternalGPIOPin *get_interrupt_pin() const { return interrupt_pin_; }
   
   void register_fan(class IthoFan *fan) { fan_ = fan; }
-  
-  // Public member accessed by interrupt handler
-  bool has_packet_{false};
 
  protected:
-  friend void IRAM_ATTR itho_interrupt_handler();
-  
-  void process_packet();
+  void handle_packet(std::vector<uint8_t> packet, float rssi, uint8_t lqi);
   int get_remote_index(const std::string &id);
   void set_state(int state, int timer, const std::string &id);
   
-  IthoCC1101 rf_;
+  // Packet encoding/decoding
+  std::vector<uint8_t> encode_packet(IthoCommand command);
+  IthoCommand decode_packet(const std::vector<uint8_t> &packet, std::string &device_id);
+  
+  cc1101::CC1101Component *cc1101_{nullptr};
   std::vector<RemoteInfo> remotes_;
-  std::string device_id_{"ESPHOME"};
-  InternalGPIOPin *interrupt_pin_{nullptr};
+  uint8_t device_id_[3]{0, 0, 0};
+  uint8_t counter_{0};
   
   int state_{1};
-  int old_state_{1};
   int timer_{0};
   std::string last_id_{"System"};
-  
-  bool init_complete_{false};
   
   class IthoFan *fan_{nullptr};
 };

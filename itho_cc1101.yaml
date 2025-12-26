@@ -1,0 +1,88 @@
+# Example configuration for Itho Fan with ESPHome native CC1101
+
+esphome:
+  name: fancontrol
+
+esp8266:
+  board: d1_mini
+  framework:
+    version: recommended
+
+# SPI configuration for CC1101
+spi:
+  clk_pin: D5   # GPIO14
+  mosi_pin: D7  # GPIO13
+  miso_pin: D6  # GPIO12
+
+# CC1101 RF transceiver configuration
+cc1101:
+  id: cc1101_transceiver
+  cs_pin: D8        # GPIO15 - Chip Select
+  gdo0_pin: D1      # GPIO5 - GDO0 for packet reception
+  frequency: 868.299MHz
+  modulation: ASK/OOK
+  sync_mode: None
+  packet_mode: false
+
+external_components:
+  - source:
+      type: local
+      path: components
+    components: [itho_fan]
+
+itho_fan:
+  id: itho_hub
+  cc1101_id: cc1101_transceiver
+  device_id: "10,87,81"
+  remote_ids:
+    - remote_id: "51,40,61"
+      room_name: "Badkamer"
+    - remote_id: "73,82,11"
+      room_name: "Toilet"
+
+fan:
+  - platform: itho_fan
+    id: itho_fan_component
+    itho_hub_id: itho_hub
+    name: "Itho Ventilation"
+
+text_sensor:
+  - platform: template
+    name: "Fan Timer Remaining"
+    id: fan_timer
+    icon: "mdi:timer"
+    lambda: |-
+      if (id(itho_hub).get_timer() > 0) {
+        int minutes = id(itho_hub).get_timer() / 60;
+        int seconds = id(itho_hub).get_timer() % 60;
+        char buffer[20];
+        sprintf(buffer, "%d:%02d", minutes, seconds);
+        return {buffer};
+      }
+      return {"0"};
+    update_interval: 1s
+    
+  - platform: template
+    name: "Last Control Source"
+    id: last_controller
+    icon: "mdi:remote"
+    lambda: |-
+      return {id(itho_hub).get_last_id()};
+    update_interval: 1s
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: "FALLBACK AP"
+    password: "jdsh348201"
+
+captive_portal:
+
+logger:
+  level: DEBUG
+
+api:
+
+ota:
+  - platform: esphome
