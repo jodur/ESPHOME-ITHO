@@ -20,7 +20,7 @@ cc1101:
   cs_pin: D8        # GPIO15 - Chip Select
   gdo0_pin: D1      # GPIO5 - GDO0 for packet reception
   frequency: 868.299MHz
-  modulation: ASK/OOK
+  modulation_type: ASK/OOK
   sync_mode: None
   packet_mode: false
 
