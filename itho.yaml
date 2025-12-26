@@ -1,6 +1,15 @@
 # Pure YAML Itho ventilation control using ESPHome CC1101 component
 # No external components needed!
 
+# ===== CONFIGURATION =====
+# Set your unique device ID here (array of 3 decimal numbers, 0-255)
+# Each ESP/CC1101 must have a UNIQUE ID!
+# Format: decimal integers (NOT hex!)
+substitutions:
+  device_id: "10, 87, 81"   # Device ID bytes (decimal 0-255 each)
+  # Example: "10, 87, 81" displays as "0A,57,51" in hex
+  # CHANGE THIS to make your device unique!
+
 esphome:
   name: itho-fan
 
@@ -33,22 +42,47 @@ spi:
   miso_pin: D6  # GPIO12
 
 # CC1101 RF transceiver configuration
+# Settings based on https://community.home-assistant.io/t/guide-controlling-itho-daalderop-fan-with-esp8266-and-cc1101/446808
 cc1101:
   id: cc1101_transceiver
-  cs_pin: D8        # GPIO15
+  cs_pin: D8        # GPIO15 on D1 Mini
   gdo0_pin: D1      # GPIO5
-  frequency: 868.299MHz
-  modulation_type: ASK/OOK
-  sync_mode: None
-  packet_mode: false
+  
+  # Base/carrier frequency: 868.299866MHz
+  frequency: 868.2999MHz
+  
+  # 2-FSK modulation
+  modulation_type: 2-FSK
+  
+  # Symbol rate: MDMCFG4=0x5A, MDMCFG3=0x83 = 38.3835 kBaud
+  symbol_rate: 38383
+  
+  # Filter bandwidth: ~203kHz (based on MDMCFG4=0x5A)
+  filter_bandwidth: 203kHz
+  
+  # Frequency deviation: DEVIATN=0x50 = 50.78125kHz
+  fsk_deviation: 50kHz
+  
+  # Output power
+  output_power: 10
+  
+  # Enable packet mode
+  packet_mode: true
+  
+  # Packet mode configuration
+  sync_mode: 16/16  # MDMCFG2=0x02 = 16-bit sync word
+  sync1: 0xB3      # SYNC1=179 (0xB3)
+  sync0: 0x2A      # SYNC0=42 (0x2A)
+  packet_length: 63  # Fixed packet length (sync bytes removed by CC1101)
+  crc_enable: false  # CRC disabled in ITHO
+  whitening: false   # Data whitening disabled
   
   # Handle incoming packets
   on_packet:
     - lambda: |-
         ESP_LOGD("itho", "Received packet, RSSI: %.1f dBm, Size: %d", rssi, x.size());
         
-        // TODO: Decode Itho protocol here
-        // For now just log the raw packet
+        // Log raw packet
         std::string hex = "";
         for (auto b : x) {
           char buf[4];
@@ -57,9 +91,144 @@ cc1101:
         }
         ESP_LOGD("itho", "Packet: %s", hex.c_str());
         
-        // Example: detect commands based on packet patterns
-        // This is simplified - real Itho decoding is more complex
-        // You would check for specific byte sequences that match commands
+        // Itho packet structure (after sync bytes removed by CC1101):
+        // Byte 0: Counter
+        // Byte 1-3: Device ID (3 bytes)
+        // Byte 4-9: Command bytes
+        // Minimum packet size check
+        if (x.size() < 10) {
+          ESP_LOGW("itho", "Packet too short: %d bytes", x.size());
+          return;
+        }
+        
+        // Extract device ID (as decimal for comparison)
+        char device_id[16];
+        sprintf(device_id, "%d,%d,%d", x[1], x[2], x[3]);
+        ESP_LOGD("itho", "Device ID: %s (hex: %02X,%02X,%02X)", device_id, x[1], x[2], x[3]);
+        
+        // ===== ALLOWED REMOTE IDs LIST =====
+        // Add your Itho remote IDs here with their room names
+        // Format: {"Device_ID", "Room Name"} - IDs in DECIMAL format!
+        // Example: {"51,40,61", "Badkamer"} means bytes 51, 40, 61 (decimal)
+        struct RemoteID {
+          const char* id;
+          const char* room_name;
+        };
+        
+        RemoteID allowed_remotes[] = {
+          {"51,40,61", "Badkamer"},   // Remote 1 - decimal: 51,40,61 (hex: 0x33,0x28,0x3D)
+          {"73,82,11", "Toilet"},     // Remote 2 - decimal: 73,82,11 (hex: 0x49,0x52,0x0B)
+          {"10,87,81", "Keuken"}      // Remote 3 - decimal: 10,87,81 (hex: 0x0A,0x57,0x51)
+          // CHANGE THESE TO YOUR ACTUAL REMOTE IDs!
+          // Use DECIMAL numbers (0-255), same as original config
+        };
+        
+        // Check if device ID is in allowed list
+        bool device_allowed = false;
+        const char* room_name = "Unknown";
+        
+        for (auto& remote : allowed_remotes) {
+          if (strcmp(device_id, remote.id) == 0) {
+            device_allowed = true;
+            room_name = remote.room_name;
+            break;
+          }
+        }
+        
+        if (!device_allowed) {
+          ESP_LOGW("itho", "Ignored packet from unknown device: %s", device_id);
+          return;  // Reject commands from unknown devices
+        }
+        
+        ESP_LOGI("itho", "Accepted command from: %s (%s)", room_name, device_id);
+        
+        // Check command bytes (bytes 4-9)
+        // Itho uses specific command patterns
+        int new_speed = -1;
+        int new_timer = 0;
+        
+        // Speed commands: 0x22 (34), 0xF1 (241)
+        if (x.size() >= 10 && x[4] == 0x22 && x[5] == 0xF1 && x[6] == 0x03) {
+          uint8_t speed_byte = x[8];  // Byte 8 contains speed value
+          
+          switch (speed_byte) {
+            case 0x02:  // Low speed
+              ESP_LOGD("itho", "Command: LOW");
+              new_speed = 1;
+              break;
+            case 0x03:  // Medium speed
+              ESP_LOGD("itho", "Command: MEDIUM");
+              new_speed = 2;
+              break;
+            case 0x04:  // High/Full speed
+              ESP_LOGD("itho", "Command: HIGH/FULL");
+              new_speed = 3;  // Or 4 for Full, but they use same command
+              break;
+            default:
+              ESP_LOGD("itho", "Unknown speed: 0x%02X", speed_byte);
+              break;
+          }
+        }
+        // Timer commands: 0x22 (34), 0xF3 (243)
+        else if (x.size() >= 10 && x[4] == 0x22 && x[5] == 0xF3 && x[6] == 0x03) {
+          uint8_t timer_value = x[9];  // Byte 9 contains timer value (10, 20, or 30)
+          
+          switch (timer_value) {
+            case 0x0A:  // Timer 10 minutes (decimal 10)
+              ESP_LOGD("itho", "Command: TIMER 10min");
+              new_speed = 3;  // High speed
+              new_timer = 600;  // 10 minutes
+              break;
+            case 0x14:  // Timer 20 minutes (decimal 20)
+              ESP_LOGD("itho", "Command: TIMER 20min");
+              new_speed = 3;  // High speed
+              new_timer = 1200;  // 20 minutes
+              break;
+            case 0x1E:  // Timer 30 minutes (decimal 30)
+              ESP_LOGD("itho", "Command: TIMER 30min");
+              new_speed = 3;  // High speed
+              new_timer = 1800;  // 30 minutes
+              break;
+            default:
+              ESP_LOGD("itho", "Unknown timer value: 0x%02X", timer_value);
+              break;
+          }
+        }
+        
+        // Update fan state if command was recognized
+        if (new_speed > 0) {
+          id(fan_speed) = new_speed;
+          id(fan_timer) = new_timer;
+          id(last_source) = std::string(room_name);  // Use room name instead of device ID
+          
+          // Set flag to prevent re-transmission
+          id(updating_from_packet) = true;
+          
+          // Update fan entity
+          auto call = id(itho_ventilation).make_call();
+          call.set_state(true);
+          call.set_speed(new_speed);
+          
+          // Set preset mode if timer is active
+          if (new_timer == 600) {
+            call.set_preset_mode("Timer 10min");
+          } else if (new_timer == 1200) {
+            call.set_preset_mode("Timer 20min");
+          } else if (new_timer == 1800) {
+            call.set_preset_mode("Timer 30min");
+          } else {
+            // No timer, clear preset mode
+            call.set_preset_mode("");
+          }
+          
+          call.perform();
+          
+          // Clear flag after update
+          id(updating_from_packet) = false;
+          
+          ESP_LOGI("itho", "Updated fan: speed=%d, timer=%ds, source=%s", 
+                   new_speed, new_timer, room_name);
+        }
 
 globals:
   - id: fan_speed
@@ -74,6 +243,15 @@ globals:
     type: std::string
     restore_value: no
     initial_value: '"System"'
+  - id: updating_from_packet
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  # Device ID bytes (configured via substitutions)
+  - id: my_device_id
+    type: uint8_t[3]
+    restore_value: no
+    initial_value: '{${device_id}}'
 
 # Template fan for control
 fan:
@@ -90,12 +268,17 @@ fan:
     on_turn_on:
       then:
         - lambda: |-
+            // Don't retransmit if update came from received packet
+            if (id(updating_from_packet)) {
+              ESP_LOGD("itho", "Skipping transmit - update from received packet");
+              return;
+            }
+            
             // Send LOW speed command via CC1101
             std::vector<uint8_t> packet = {
-              // Simplified Itho LOW command packet
-              // Real implementation needs proper Manchester encoding
-              0x16, 0xA4, 0x10, 0x87, 0x81,  // Header + Device ID
-              0x22, 0xF3, 0x04, 0x00, 0x00, 0x04  // LOW command
+              // Itho LOW command (from ITHO-Lib: 34, 241, 3, 0, 2, 4)
+              0x16, 0xA4, id(my_device_id)[0], id(my_device_id)[1], id(my_device_id)[2],  // Header + Device ID
+              0x22, 0xF1, 0x03, 0x00, 0x02, 0x04  // LOW command
             };
             id(cc1101_transceiver).transmit_packet(packet);
             id(fan_speed) = 1;
@@ -103,10 +286,16 @@ fan:
     on_turn_off:
       then:
         - lambda: |-
+            // Don't retransmit if update came from received packet
+            if (id(updating_from_packet)) {
+              ESP_LOGD("itho", "Skipping transmit - update from received packet");
+              return;
+            }
+            
             // Turn off = send LOW speed
             std::vector<uint8_t> packet = {
-              0x16, 0xA4, 0x10, 0x87, 0x81,
-              0x22, 0xF3, 0x04, 0x00, 0x00, 0x04
+              0x16, 0xA4, id(my_device_id)[0], id(my_device_id)[1], id(my_device_id)[2],
+              0x22, 0xF1, 0x03, 0x00, 0x02, 0x04  // LOW command
             };
             id(cc1101_transceiver).transmit_packet(packet);
             id(fan_speed) = 1;
@@ -115,29 +304,35 @@ fan:
     on_speed_set:
       then:
         - lambda: |-
+            // Don't retransmit if update came from received packet
+            if (id(updating_from_packet)) {
+              ESP_LOGD("itho", "Skipping transmit - update from received packet");
+              return;
+            }
+            
             int speed = id(itho_ventilation).speed;
             std::vector<uint8_t> packet;
             
             // Base packet structure
             packet.push_back(0x16);  // Preamble
             packet.push_back(0xA4);  // Sync
-            packet.push_back(0x10);  // Device ID byte 1
-            packet.push_back(0x87);  // Device ID byte 2
-            packet.push_back(0x81);  // Device ID byte 3
+            packet.push_back(id(my_device_id)[0]);  // Device ID byte 1
+            packet.push_back(id(my_device_id)[1]);  // Device ID byte 2
+            packet.push_back(id(my_device_id)[2]);  // Device ID byte 3
             
-            // Command bytes based on speed
+            // Command bytes based on speed (from ITHO-Lib)
             if (speed == 1) {
-              // LOW: 0x22, 0xF3, 0x04, 0x00, 0x00, 0x04
-              packet.insert(packet.end(), {0x22, 0xF3, 0x04, 0x00, 0x00, 0x04});
+              // LOW: 34, 241, 3, 0, 2, 4
+              packet.insert(packet.end(), {0x22, 0xF1, 0x03, 0x00, 0x02, 0x04});
             } else if (speed == 2) {
-              // MEDIUM: 0x22, 0xF3, 0x03, 0x00, 0x00, 0x03
-              packet.insert(packet.end(), {0x22, 0xF3, 0x03, 0x00, 0x00, 0x03});
+              // MEDIUM: 34, 241, 3, 0, 3, 4
+              packet.insert(packet.end(), {0x22, 0xF1, 0x03, 0x00, 0x03, 0x04});
             } else if (speed == 3) {
-              // HIGH: 0x22, 0xF3, 0x02, 0x00, 0x00, 0x02
-              packet.insert(packet.end(), {0x22, 0xF3, 0x02, 0x00, 0x00, 0x02});
+              // HIGH: 34, 241, 3, 0, 4, 4
+              packet.insert(packet.end(), {0x22, 0xF1, 0x03, 0x00, 0x04, 0x04});
             } else if (speed == 4) {
-              // FULL: 0x22, 0xF3, 0x01, 0x00, 0x00, 0x01
-              packet.insert(packet.end(), {0x22, 0xF3, 0x01, 0x00, 0x00, 0x01});
+              // FULL: 34, 241, 3, 0, 4, 4 (same as HIGH)
+              packet.insert(packet.end(), {0x22, 0xF1, 0x03, 0x00, 0x04, 0x04});
             }
             
             id(cc1101_transceiver).transmit_packet(packet);
@@ -148,17 +343,27 @@ fan:
     on_preset_set:
       then:
         - lambda: |-
-            std::string preset = id(itho_ventilation).get_preset_mode();
-            std::vector<uint8_t> packet = {0x16, 0xA4, 0x10, 0x87, 0x81};
+            // Don't retransmit if update came from received packet
+            if (id(updating_from_packet)) {
+              ESP_LOGD("itho", "Skipping transmit - update from received packet");
+              return;
+            }
             
+            std::string preset = id(itho_ventilation).get_preset_mode();
+            std::vector<uint8_t> packet = {0x16, 0xA4, id(my_device_id)[0], id(my_device_id)[1], id(my_device_id)[2]};
+            
+            // Timer commands from ITHO-Lib
             if (preset == "Timer 10min") {
-              packet.insert(packet.end(), {0x22, 0xF3, 0x31, 0x00, 0x00, 0x31});
+              // 34, 243, 3, 0, 0, 10
+              packet.insert(packet.end(), {0x22, 0xF3, 0x03, 0x00, 0x00, 0x0A});
               id(fan_timer) = 600;
             } else if (preset == "Timer 20min") {
-              packet.insert(packet.end(), {0x22, 0xF3, 0x32, 0x00, 0x00, 0x32});
+              // 34, 243, 3, 0, 0, 20
+              packet.insert(packet.end(), {0x22, 0xF3, 0x03, 0x00, 0x00, 0x14});
               id(fan_timer) = 1200;
             } else if (preset == "Timer 30min") {
-              packet.insert(packet.end(), {0x22, 0xF3, 0x33, 0x00, 0x00, 0x33});
+              // 34, 243, 3, 0, 0, 30
+              packet.insert(packet.end(), {0x22, 0xF3, 0x03, 0x00, 0x00, 0x1E});
               id(fan_timer) = 1800;
             }
             
@@ -189,6 +394,42 @@ text_sensor:
     lambda: |-
       return {id(last_source)};
 
+# Button to join/pair a new remote
+button:
+  - platform: template
+    name: "Join/Pair Remote"
+    id: join_button
+    icon: "mdi:link-plus"
+    on_press:
+      - logger.log: "Sending JOIN command - Press remote button within 10 seconds!"
+      - lambda: |-
+          // Send JOIN command (from ITHO-Lib: 31, 201, 12, 0, 34, 241)
+          std::vector<uint8_t> packet = {
+            0x16, 0xA4, id(my_device_id)[0], id(my_device_id)[1], id(my_device_id)[2],  // Header + Device ID
+            0x1F, 0xC9, 0x0C, 0x00, 0x22, 0xF1  // JOIN command
+          };
+          id(cc1101_transceiver).transmit_packet(packet);
+          ESP_LOGI("itho", "JOIN command sent - waiting for remote button press");
+      - delay: 10s
+      - logger.log: "JOIN mode ended"
+
+  - platform: template
+    name: "Leave/Unpair Remote"
+    id: leave_button
+    icon: "mdi:link-off"
+    on_press:
+      - logger.log: "Sending LEAVE command - Press remote button within 10 seconds!"
+      - lambda: |-
+          // Send LEAVE command (from ITHO-Lib: 31, 201, 6, 0, 31, 201)
+          std::vector<uint8_t> packet = {
+            0x16, 0xA4, id(my_device_id)[0], id(my_device_id)[1], id(my_device_id)[2],  // Header + Device ID
+            0x1F, 0xC9, 0x06, 0x00, 0x1F, 0xC9  // LEAVE command
+          };
+          id(cc1101_transceiver).transmit_packet(packet);
+          ESP_LOGI("itho", "LEAVE command sent - waiting for remote button press");
+      - delay: 10s
+      - logger.log: "LEAVE mode ended"
+
 # Timer countdown (runs every second)
 interval:
   - interval: 1s
@@ -197,10 +438,11 @@ interval:
           if (id(fan_timer) > 0) {
             id(fan_timer)--;
             if (id(fan_timer) == 0) {
-              // Timer expired, return to low speed
+              // Timer expired, return to low speed and clear preset mode
               ESP_LOGD("itho", "Timer expired, returning to low speed");
               auto call = id(itho_ventilation).make_call();
               call.set_speed(1);
+              call.set_preset_mode("");  // Clear preset mode
               call.perform();
             }
           }
