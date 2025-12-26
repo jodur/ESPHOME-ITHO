@@ -49,28 +49,31 @@ This is a **complete rewrite** that eliminates external C++ components in favor 
 
 **Important**: CC1101 requires 3.3V power! Do not connect to 5V.
 
-## Installation
+## Installation & Configuration
 
 ### Quick Start
 
-1. **Copy the configuration file**:
+1. **Download the configuration file**:
    ```bash
    wget https://raw.githubusercontent.com/jodur/ESPHOME-ITHO/feature/use-esphome-cc1101/itho.yaml
    ```
 
-2. **Create `secrets.yaml`**:
+2. **Create `secrets.yaml`** in the same directory:
    ```yaml
    wifi_ssid: "YourWiFiSSID"
    wifi_password: "YourWiFiPassword"
    ```
 
-3. **Configure your Device ID** in `itho.yaml`:
+3. **Configure device ID** (top of `itho.yaml`):
    ```yaml
    substitutions:
      device_id: "10, 87, 81"  # CHANGE THIS to make your device unique!
+     controller_name: "Home Assistant"  # Displayed as control source
    ```
+   
+   **Important**: Each ESP/CC1101 device must have a **unique** ID. Use decimal numbers (0-255 each).
 
-4. **Add your Remote IDs** (around line 120 in `itho.yaml`):
+4. **Configure remote whitelist** (around line 120 in `itho.yaml`):
    ```cpp
    RemoteID allowed_remotes[] = {
      {"51,40,61", "Badkamer"},   // Your remote 1 - CHANGE THESE!
@@ -78,42 +81,13 @@ This is a **complete rewrite** that eliminates external C++ components in favor 
      {"10,87,81", "Keuken"}      // Your remote 3
    };
    ```
+   
+   Only commands from these device IDs will be accepted (security feature).
 
 5. **Compile and flash**:
    ```bash
    esphome run itho.yaml
-   esphome run itho.yaml
    ```
-
-## Configuration
-
-The configuration is a single YAML file (`itho.yaml`) with no external dependencies.
-
-### Key Configuration Sections
-
-#### 1. Device ID (Top of file)
-```yaml
-substitutions:
-  device_id: "10, 87, 81"   # Your unique device ID (decimal 0-255 each)
-```
-
-Each ESP/CC1101 device must have a **unique** ID. Use decimal numbers (0-255).
-
-#### 2. WiFi Credentials
-Create a `secrets.yaml` file:
-```yaml
-wifi_ssid: "YourWiFiName"
-wifi_password: "YourWiFiPassword"
-```
-
-#### 3. Remote Whitelist (in itho.yaml around line 120)
-```cpp
-RemoteID allowed_remotes[] = {
-  {"51,40,61", "Badkamer"},   // Remote 1 - decimal format
-  {"73,82,11", "Toilet"},     // Remote 2
-  {"10,87,81", "Keuken"}      // Remote 3
-};
-```
 
 ### Finding Your Remote IDs
 
