@@ -193,13 +193,41 @@ data:
   speed: 1
 ```
 
-### Pairing a New Remote
+### Pairing the CC1101/ESP with Your Itho Ventilation Unit
 
-1. Click the **"Join/Pair Remote"** button in Home Assistant
-2. Within 10 seconds, press any button on your Itho remote
-3. The remote is now paired to your ventilation unit
+**Important:** The JOIN/LEAVE buttons pair/unpair **your CC1101 device** (ESP) with the ventilation unit, not remotes!
 
-To unpair: Use the **"Leave/Unpair Remote"** button instead.
+#### Pairing Procedure
+
+The Itho ventilation unit must be in **pairing mode** to accept new devices:
+
+1. **Enter pairing mode on ventilation unit:**
+   - Turn OFF the power to the ventilation unit at the circuit breaker
+   - Wait 10 seconds
+   - Turn the power back ON
+   - The unit is now in pairing mode for **30 seconds** after power-up
+
+2. **Pair the CC1101/ESP:**
+   - **Immediately** click the **"Join/Pair"** button in Home Assistant
+   - Wait for confirmation in the logs
+   - Your ESP/CC1101 is now paired and can control the fan
+
+3. **Test:**
+   - Use Home Assistant to change fan speed
+   - The ventilation unit should respond to commands
+
+#### Unpairing
+
+To remove the CC1101/ESP from the ventilation unit:
+1. Follow the same power cycle procedure (step 1 above)
+2. Click **"Leave/Unpair"** button instead
+3. The CC1101/ESP will no longer control the unit
+
+**Note:** Your physical Itho remotes don't need to be re-paired after this. The CC1101/ESP acts as an additional remote controller.
+
+### Pairing Physical Itho Remotes (Original Remotes)
+
+Physical Itho remotes are paired directly with the ventilation unit using their own pairing procedure (consult your Itho remote manual). The CC1101/ESP will receive and display commands from these paired remotes if their IDs are in the `allowed_remotes` whitelist.
 
 ## Migration from Version 1.x (C++ Component)
 

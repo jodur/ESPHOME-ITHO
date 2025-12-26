@@ -394,41 +394,46 @@ text_sensor:
     lambda: |-
       return {id(last_source)};
 
-# Button to join/pair a new remote
+# Buttons to pair/unpair CC1101 with Itho ventilation unit
+# IMPORTANT: Ventilation unit must be in pairing mode!
+# Power OFF the unit, wait 10 sec, power ON - unit is in pairing mode for 30 sec
 button:
   - platform: template
-    name: "Join/Pair Remote"
+    name: "Join/Pair CC1101 with Fan"
     id: join_button
     icon: "mdi:link-plus"
     on_press:
-      - logger.log: "Sending JOIN command - Press remote button within 10 seconds!"
+      - logger.log: "Sending JOIN command - Ventilation unit must be freshly powered on!"
       - lambda: |-
-          // Send JOIN command (from ITHO-Lib: 31, 201, 12, 0, 34, 241)
+          // Send JOIN command to pair THIS CC1101 with the ventilation unit
+          // Uses OUR device_id to register as a new remote
+          // Command from ITHO-Lib: 31, 201, 12, 0, 34, 241
           std::vector<uint8_t> packet = {
             0x16, 0xA4, id(my_device_id)[0], id(my_device_id)[1], id(my_device_id)[2],  // Header + Device ID
             0x1F, 0xC9, 0x0C, 0x00, 0x22, 0xF1  // JOIN command
           };
           id(cc1101_transceiver).transmit_packet(packet);
-          ESP_LOGI("itho", "JOIN command sent - waiting for remote button press");
-      - delay: 10s
-      - logger.log: "JOIN mode ended"
+          ESP_LOGI("itho", "JOIN command sent - CC1101 should now be paired with fan unit");
+      - delay: 2s
+      - logger.log: "JOIN complete - try controlling the fan from Home Assistant"
 
   - platform: template
-    name: "Leave/Unpair Remote"
+    name: "Leave/Unpair CC1101 from Fan"
     id: leave_button
     icon: "mdi:link-off"
     on_press:
-      - logger.log: "Sending LEAVE command - Press remote button within 10 seconds!"
+      - logger.log: "Sending LEAVE command - Ventilation unit must be freshly powered on!"
       - lambda: |-
-          // Send LEAVE command (from ITHO-Lib: 31, 201, 6, 0, 31, 201)
+          // Send LEAVE command to unpair THIS CC1101 from the ventilation unit
+          // Command from ITHO-Lib: 31, 201, 6, 0, 31, 201
           std::vector<uint8_t> packet = {
             0x16, 0xA4, id(my_device_id)[0], id(my_device_id)[1], id(my_device_id)[2],  // Header + Device ID
             0x1F, 0xC9, 0x06, 0x00, 0x1F, 0xC9  // LEAVE command
           };
           id(cc1101_transceiver).transmit_packet(packet);
-          ESP_LOGI("itho", "LEAVE command sent - waiting for remote button press");
-      - delay: 10s
-      - logger.log: "LEAVE mode ended"
+          ESP_LOGI("itho", "LEAVE command sent - CC1101 should now be unpaired from fan unit");
+      - delay: 2s
+      - logger.log: "LEAVE complete"
 
 # Timer countdown (runs every second)
 interval:
