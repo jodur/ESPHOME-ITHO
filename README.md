@@ -313,6 +313,46 @@ Byte 1-3:  Device ID (3 bytes)
 Byte 4-9:  Command bytes (6 bytes)
 ```
 
+### Interrupt Handling vs Polling
+
+**Important technical difference from Version 1.x:**
+
+- **Version 1.x (C++ Component)**: Used hardware interrupts on GDO0 pin for immediate packet detection
+- **Version 2.0 (Native CC1101)**: Uses **polling** in the `loop()` method
+
+The native ESPHome CC1101 component doesn't use hardware interrupts. Instead, it polls the GDO0 pin in the `loop()` function:
+
+```cpp
+void CC1101Component::loop() {
+  if (this->gdo0_pin_ == nullptr || !this->gdo0_pin_->digital_read()) {
+    return;  // No packet received
+  }
+  // Read packet from FIFO...
+}
+```
+
+**How it works:**
+1. GDO0 is configured to assert HIGH when packet is received (register: `GDO0_CFG = 0x01`)
+2. ESPHome `loop()` runs continuously, checking GDO0 pin state
+3. When HIGH, packet data is read from RX FIFO
+4. RSSI and LQI are read from status registers
+5. `on_packet` trigger fires with packet data
+
+**Performance:** This polling approach is fast enough for Itho remote commands (which are infrequent). The main loop in ESPHome typically runs every few milliseconds, providing adequate responsiveness for user interactions.
+
+**Advantages of polling method:**
+- Simpler code, no interrupt context switching
+- No race conditions between ISR and main code
+- Easier debugging
+- More portable across platforms
+
+**When polling might be insufficient:**
+- High-frequency packet bursts (>100 packets/sec)
+- Time-critical protocols requiring <1ms response
+- Battery-powered scenarios where deep sleep is needed
+
+For Itho ventilation control, the polling method works perfectly fine.
+
 ## Credits
 
 Based on the original work from:
