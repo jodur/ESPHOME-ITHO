@@ -9,6 +9,9 @@ substitutions:
   device_id: "10, 87, 81"   # Device ID bytes (decimal 0-255 each)
   # Example: "10, 87, 81" displays as "0A,57,51" in hex
   # CHANGE THIS to make your device unique!
+  
+  # Controller name shown when controlling from Home Assistant
+  controller_name: "Home Assistant"  # Change to your preferred name
 
 esphome:
   name: itho-fan
@@ -282,6 +285,7 @@ fan:
             };
             id(cc1101_transceiver).transmit_packet(packet);
             id(fan_speed) = 1;
+            id(last_source) = "${controller_name}";
     
     on_turn_off:
       then:
@@ -299,6 +303,7 @@ fan:
             };
             id(cc1101_transceiver).transmit_packet(packet);
             id(fan_speed) = 1;
+            id(last_source) = "${controller_name}";
     
     # Speed control
     on_speed_set:
@@ -337,6 +342,7 @@ fan:
             
             id(cc1101_transceiver).transmit_packet(packet);
             id(fan_speed) = speed;
+            id(last_source) = "${controller_name}";
             ESP_LOGD("itho", "Sent speed %d command", speed);
     
     # Preset modes (timers)
@@ -368,6 +374,7 @@ fan:
             }
             
             id(cc1101_transceiver).transmit_packet(packet);
+            id(last_source) = "${controller_name}";
             ESP_LOGD("itho", "Sent timer command: %s", preset.c_str());
 
 # Text sensors for status
