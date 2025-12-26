@@ -2,6 +2,7 @@ import esphome.codegen as cg
 import esphome.config_validation as cv
 from esphome.components import spi
 from esphome.const import CONF_ID
+from esphome import pins
 
 CODEOWNERS = ["@jodur"]
 DEPENDENCIES = []
@@ -28,7 +29,7 @@ CONFIG_SCHEMA = cv.Schema(
         cv.GenerateID(): cv.declare_id(IthoFanHub),
         cv.Required(CONF_DEVICE_ID): cv.string,
         cv.Optional(CONF_REMOTE_IDS, default=[]): cv.ensure_list(REMOTE_SCHEMA),
-        cv.Required(CONF_PIN_INTERRUPT): cv.int_,
+        cv.Required(CONF_PIN_INTERRUPT): pins.gpio_input_pin_schema,
     }
 ).extend(cv.COMPONENT_SCHEMA)
 
@@ -53,8 +54,11 @@ async def to_code(config):
         cg.add(var.add_remote_id(remote[CONF_REMOTE_ID], remote[CONF_ROOM_NAME]))
 
     # Set interrupt pin
-    cg.add(var.set_interrupt_pin(config[CONF_PIN_INTERRUPT]))
+    interrupt_pin = await cg.gpio_pin_expression(config[CONF_PIN_INTERRUPT])
+    cg.add(var.set_interrupt_pin(interrupt_pin))
 
-    # Add library dependency
+    # Add library dependencies
+    # Note: SPI is standard Arduino library
+    # ITHO-Lib is pulled from GitHub during compilation
     cg.add_library("SPI", None)
     cg.add_library("https://github.com/jodur/ITHO-Lib#NewLib", None)

@@ -15,9 +15,9 @@ static const int TIME_30MIN = 30 * 60;
 // Global reference for interrupt handler
 static IthoFanHub *global_itho_hub = nullptr;
 
-void IRAM_ATTR itho_interrupt_handler() {
-  if (global_itho_hub != nullptr) {
-    global_itho_hub->has_packet_ = true;
+void IRAM_ATTR itho_interrupt_handler(IthoFanHub *arg) {
+  if (arg != nullptr) {
+    arg->has_packet_ = true;
   }
 }
 
@@ -29,8 +29,13 @@ void IthoFanHub::setup() {
   global_itho_hub = this;
   
   rf_.init();
-  pinMode(interrupt_pin_, INPUT);
-  attachInterrupt(digitalPinToInterrupt(interrupt_pin_), itho_interrupt_handler, FALLING);
+  
+  if (interrupt_pin_ != nullptr) {
+    interrupt_pin_->setup();
+    interrupt_pin_->pin_mode(gpio::FLAG_INPUT);
+    interrupt_pin_->attach_interrupt(itho_interrupt_handler, this, gpio::INTERRUPT_FALLING_EDGE);
+  }
+  
   rf_.initReceive();
   
   // Set device ID for sending
@@ -39,6 +44,7 @@ void IthoFanHub::setup() {
   rf_.setDeviceID(id[0], id[1], id[2]);
   
   init_complete_ = true;
+  last_id_ = "System";
   
   ESP_LOGCONFIG(TAG, "Itho Fan Hub setup complete");
 }
@@ -73,7 +79,9 @@ void IthoFanHub::loop() {
 void IthoFanHub::dump_config() {
   ESP_LOGCONFIG(TAG, "Itho Fan Hub:");
   ESP_LOGCONFIG(TAG, "  Device ID: %s", device_id_.c_str());
-  ESP_LOGCONFIG(TAG, "  Interrupt Pin: %d", interrupt_pin_);
+  if (interrupt_pin_ != nullptr) {
+    LOG_PIN("  Interrupt Pin: ", interrupt_pin_);
+  }
   ESP_LOGCONFIG(TAG, "  Registered Remotes: %d", remotes_.size());
   for (const auto &remote : remotes_) {
     ESP_LOGCONFIG(TAG, "    - ID: %s, Room: %s", remote.id.c_str(), remote.room_name.c_str());
@@ -88,10 +96,6 @@ void IthoFanHub::set_device_id(uint8_t id1, uint8_t id2, uint8_t id3) {
 
 void IthoFanHub::add_remote_id(const std::string &id, const std::string &room_name) {
   remotes_.push_back({id, room_name});
-}
-
-void IthoFanHub::set_interrupt_pin(uint8_t pin) {
-  interrupt_pin_ = pin;
 }
 
 void IthoFanHub::send_command(uint8_t command) {
@@ -156,7 +160,8 @@ void IthoFanHub::process_packet() {
   
   if (rf_.checkForNewPacket()) {
     IthoCommand cmd = rf_.getLastCommand();
-    std::string id = rf_.getLastIDstr();
+    String id_str = rf_.getLastIDstr();
+    std::string id = std::string(id_str.c_str());
     
     int index = get_remote_index(id);
     
@@ -215,11 +220,8 @@ void IthoFanHub::process_packet() {
 void IthoFan::setup() {
   ESP_LOGCONFIG(TAG, "Setting up Itho Fan...");
   
-  // Initialize with low speed
-  this->state = true;
-  this->speed = 1;
-  
-  update_state();
+  // Don't set initial state here, let on_boot handle it
+  // This prevents conflicts with the on_boot action
 }
 
 void IthoFan::dump_config() {
@@ -251,13 +253,13 @@ void IthoFan::control(const fan::FanCall &call) {
     hub_->send_command(this->speed);
   }
   
-  if (call.get_preset_mode().has_value()) {
-    std::string preset = *call.get_preset_mode();
-    if (preset == "Timer 10min") {
+  if (call.get_preset_mode()) {
+    const char* preset = call.get_preset_mode();
+    if (strcmp(preset, "Timer 10min") == 0) {
       hub_->send_command(13);
-    } else if (preset == "Timer 20min") {
+    } else if (strcmp(preset, "Timer 20min") == 0) {
       hub_->send_command(23);
-    } else if (preset == "Timer 30min") {
+    } else if (strcmp(preset, "Timer 30min") == 0) {
       hub_->send_command(33);
     }
   }
@@ -272,26 +274,29 @@ void IthoFan::update_state() {
   
   int state = hub_->get_state();
   
+  // Create a fan call to update state
+  auto call = this->make_call();
+  
   // Map state to fan speed
   if (state >= 10) {
     // Timer mode - treat as high speed
-    this->speed = 3;
+    call.set_speed(3);
     
     // Set preset based on timer state
     if (state == 13) {
-      this->preset_mode = "Timer 10min";
+      call.set_preset_mode("Timer 10min");
     } else if (state == 23) {
-      this->preset_mode = "Timer 20min";
+      call.set_preset_mode("Timer 20min");
     } else if (state == 33) {
-      this->preset_mode = "Timer 30min";
+      call.set_preset_mode("Timer 30min");
     }
   } else {
-    this->preset_mode = {};
-    this->speed = state;
+    call.set_preset_mode("");
+    call.set_speed(state);
   }
   
-  this->state = (state > 0);
-  this->publish_state();
+  call.set_state(state > 0);
+  call.perform();
 }
 
 }  // namespace itho_fan
