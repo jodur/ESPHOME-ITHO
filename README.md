@@ -288,6 +288,8 @@ The fan entity name and functionality remain the same, so your Home Assistant au
 - ✅ **Native CC1101**: Uses ESPHome 2025.12+ built-in component
 - ✅ **Bi-directional**: Send and receive with identical encoding
 - ✅ **Device Whitelist**: Security filtering for known remotes
+- ✅ **Auto Boot to LOW**: Fan automatically sets to LOW speed on startup (100% feature parity with v1.x)
+- ✅ **Refactored Decoder**: Improved code readability with inline helper functions for maintainability
 - ✅ **Room Tracking**: Display which remote triggered command
 - ✅ **Timer Countdown**: Automatic fan state management
 - ✅ **Anti-Retransmit**: Prevents packet loops
