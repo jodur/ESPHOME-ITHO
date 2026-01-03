@@ -85,7 +85,7 @@ This implementation uses **100% verified Itho protocol** with custom Manchester-
    
    **Important**: Each ESP/CC1101 device must have a **unique** ID. Use decimal numbers (0-255 each).
 
-4. **Configure remote whitelist** (around line 120 in `itho.yaml`):
+4. **Configure remote whitelist** (around line 162 in `itho.yaml`):
    ```cpp
    RemoteID allowed_remotes[] = {
      {"51,40,61", "Badkamer"},   // Your remote 1 - CHANGE THESE!
@@ -253,7 +253,7 @@ If you're upgrading from the old C++ custom component:
 3. **Move device ID** to substitutions at the top:
    - Old: `rf.setDeviceID(10,87,81);` in lambda
    - New: `device_id: "10, 87, 81"` in substitutions
-4. **Update remote IDs** in the `allowed_remotes` array (around line 120):
+4. **Update remote IDs** in the `allowed_remotes` array (around line 162):
    - Old: `Idlist[0]={"51,40,61","Badkamer"};`
    - New: `{"51,40,61", "Badkamer"},`
 5. **Create** `secrets.yaml` with WiFi credentials
