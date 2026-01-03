@@ -15,6 +15,18 @@ substitutions:
 
 esphome:
   name: itho-fan
+  # Auto boot to LOW speed (ensures fan is at low speed at startup)
+  on_boot:
+    priority: -100  # Run after all components are initialized
+    then:
+      - delay: 2s  # Wait for components to be ready
+      - lambda: |-
+          ESP_LOGI("itho", "Boot: Setting fan to LOW speed");
+          id(fan_speed) = 1;
+          auto call = id(itho_ventilation).make_call();
+          call.set_state(true);
+          call.set_speed(1);
+          call.perform();
 
 esp8266:
   board: d1_mini
