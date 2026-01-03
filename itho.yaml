@@ -89,33 +89,71 @@ cc1101:
         ESP_LOGD("itho", "Received packet, RSSI: %.1f dBm, Size: %d", rssi, x.size());
         
         // Log raw packet
-        std::string hex = "";
+        std::string hex_raw = "";
         for (auto b : x) {
           char buf[4];
           sprintf(buf, "%02X ", b);
-          hex += buf;
+          hex_raw += buf;
         }
-        ESP_LOGD("itho", "Packet: %s", hex.c_str());
+        ESP_LOGD("itho", "Raw packet: %s", hex_raw.c_str());
         
-        // Itho packet structure (after sync bytes removed by CC1101):
-        // Byte 0: Counter
-        // Byte 1-3: Device ID (3 bytes)
-        // Byte 4-9: Command bytes
-        // Minimum packet size check
+        // ============================================================
+        // ITHO CUSTOM "MANCHESTER-LIKE" DECODER
+        // ============================================================
+        // Based on ESPEasy IthoCC1101.cpp and RonaldHiemstra implementation
+        // NOT standard Manchester! Extracts even bits (0,2,4,6) from 10-bit groups
+        // 63 raw bytes → 24 decoded bytes
+        // ============================================================
+        
+        const int STARTBYTE = 2;  // Skip first 2 bytes after sync
         if (x.size() < 10) {
           ESP_LOGW("itho", "Packet too short: %d bytes", x.size());
           return;
         }
         
-        // Extract device ID (as decimal for comparison)
+        // Decode using custom Itho encoding
+        uint8_t decoded[24] = {0};
+        int out_byte = 0;
+        int out_bit = 4;
+        int in_bitcounter = 0;
+        
+        for (int i = STARTBYTE; i < x.size() && out_byte < 24; i++) {
+          for (int j = 7; j >= 0 && out_byte < 24; j--) {
+            // Extract even bits (0, 2, 4, 6) from 10-bit groups
+            if (in_bitcounter == 0 || in_bitcounter == 2 || in_bitcounter == 4 || in_bitcounter == 6) {
+              uint8_t bit = (x[i] >> j) & 0x01;
+              decoded[out_byte] |= (bit << out_bit);
+              out_bit--;
+              
+              if (out_bit < 0) {
+                out_byte++;
+                out_bit = 7;
+              }
+            }
+            
+            in_bitcounter++;
+            if (in_bitcounter >= 10) {
+              in_bitcounter = 0;
+            }
+          }
+        }
+        
+        // Log decoded packet
+        std::string hex_decoded = "";
+        for (int i = 0; i < 24; i++) {
+          char buf[4];
+          sprintf(buf, "%02X ", decoded[i]);
+          hex_decoded += buf;
+        }
+        ESP_LOGD("itho", "Decoded packet: %s", hex_decoded.c_str());
+        
+        // Extract device ID (bytes 1-3)
         char device_id[16];
-        sprintf(device_id, "%d,%d,%d", x[1], x[2], x[3]);
-        ESP_LOGD("itho", "Device ID: %s (hex: %02X,%02X,%02X)", device_id, x[1], x[2], x[3]);
+        sprintf(device_id, "%d,%d,%d", decoded[1], decoded[2], decoded[3]);
+        ESP_LOGD("itho", "Device ID: %s (hex: %02X,%02X,%02X)", 
+                 device_id, decoded[1], decoded[2], decoded[3]);
         
         // ===== ALLOWED REMOTE IDs LIST =====
-        // Add your Itho remote IDs here with their room names
-        // Format: {"Device_ID", "Room Name"} - IDs in DECIMAL format!
-        // Example: {"51,40,61", "Badkamer"} means bytes 51, 40, 61 (decimal)
         struct RemoteID {
           const char* id;
           const char* room_name;
@@ -126,7 +164,6 @@ cc1101:
           {"73,82,11", "Toilet"},     // Remote 2 - decimal: 73,82,11 (hex: 0x49,0x52,0x0B)
           {"10,87,81", "Keuken"}      // Remote 3 - decimal: 10,87,81 (hex: 0x0A,0x57,0x51)
           // CHANGE THESE TO YOUR ACTUAL REMOTE IDs!
-          // Use DECIMAL numbers (0-255), same as original config
         };
         
         // Check if device ID is in allowed list
@@ -143,69 +180,87 @@ cc1101:
         
         if (!device_allowed) {
           ESP_LOGW("itho", "Ignored packet from unknown device: %s", device_id);
-          return;  // Reject commands from unknown devices
+          return;
         }
         
         ESP_LOGI("itho", "Accepted command from: %s (%s)", room_name, device_id);
         
-        // Check command bytes (bytes 4-9)
-        // Itho uses specific command patterns
+        // Parse command bytes (bytes 5-10)
+        // Command patterns (identical to ESPEASY plugin):
+        // Low:    22 F1 03 00 02 04
+        // Medium: 22 F1 03 00 03 04
+        // High:   22 F1 03 00 04 04
+        // Timer:  22 F3 03 00 00 0A/14/1E
+        // JOIN:   1F C9 0C 00 1F C9
+        // LEAVE:  1F C9 06 00 1F C9
+        
         int new_speed = -1;
         int new_timer = 0;
         
-        // Speed commands: 0x22 (34), 0xF1 (241)
-        if (x.size() >= 10 && x[4] == 0x22 && x[5] == 0xF1 && x[6] == 0x03) {
-          uint8_t speed_byte = x[8];  // Byte 8 contains speed value
-          
-          switch (speed_byte) {
-            case 0x02:  // Low speed
-              ESP_LOGD("itho", "Command: LOW");
-              new_speed = 1;
-              break;
-            case 0x03:  // Medium speed
-              ESP_LOGD("itho", "Command: MEDIUM");
-              new_speed = 2;
-              break;
-            case 0x04:  // High/Full speed
-              ESP_LOGD("itho", "Command: HIGH/FULL");
-              new_speed = 3;  // Or 4 for Full, but they use same command
-              break;
-            default:
-              ESP_LOGD("itho", "Unknown speed: 0x%02X", speed_byte);
-              break;
-          }
-        }
-        // Timer commands: 0x22 (34), 0xF3 (243)
-        else if (x.size() >= 10 && x[4] == 0x22 && x[5] == 0xF3 && x[6] == 0x03) {
-          uint8_t timer_value = x[9];  // Byte 9 contains timer value (10, 20, or 30)
-          
-          switch (timer_value) {
-            case 0x0A:  // Timer 10 minutes (decimal 10)
-              ESP_LOGD("itho", "Command: TIMER 10min");
-              new_speed = 3;  // High speed
-              new_timer = 600;  // 10 minutes
-              break;
-            case 0x14:  // Timer 20 minutes (decimal 20)
-              ESP_LOGD("itho", "Command: TIMER 20min");
-              new_speed = 3;  // High speed
-              new_timer = 1200;  // 20 minutes
-              break;
-            case 0x1E:  // Timer 30 minutes (decimal 30)
-              ESP_LOGD("itho", "Command: TIMER 30min");
-              new_speed = 3;  // High speed
-              new_timer = 1800;  // 30 minutes
-              break;
-            default:
-              ESP_LOGD("itho", "Unknown timer value: 0x%02X", timer_value);
-              break;
+        // Check for JOIN/LEAVE commands first
+        if (decoded[5] == 0x1F && decoded[6] == 0xC9 && decoded[9] == 0x1F && decoded[10] == 0xC9) {
+          if (decoded[7] == 0x0C && decoded[8] == 0x00) {
+            ESP_LOGI("itho", "Command: JOIN/PAIR - Remote %s is pairing", device_id);
+            // JOIN command received - log only, don't change fan state
+            return;
+          } else if (decoded[7] == 0x06 && decoded[8] == 0x00) {
+            ESP_LOGI("itho", "Command: LEAVE/UNPAIR - Remote %s is unpairing", device_id);
+            // LEAVE command received - log only, don't change fan state
+            return;
           }
         }
         
-        // Update fan state if command was recognized
+        // Check for speed/timer commands
+        if (decoded[5] == 0x22 && decoded[7] == 0x03) {
+          if (decoded[6] == 0xF1) {
+            // Speed command
+            switch (decoded[9]) {
+              case 0x02:
+                ESP_LOGI("itho", "Command: LOW speed");
+                new_speed = 1;
+                break;
+              case 0x03:
+                ESP_LOGI("itho", "Command: MEDIUM speed");
+                new_speed = 2;
+                break;
+              case 0x04:
+                ESP_LOGI("itho", "Command: HIGH speed");
+                new_speed = 3;
+                break;
+              default:
+                ESP_LOGW("itho", "Unknown speed byte: 0x%02X", decoded[9]);
+                break;
+            }
+          } else if (decoded[6] == 0xF3) {
+            // Timer command
+            switch (decoded[10]) {
+              case 0x0A:  // 10 minutes
+                ESP_LOGI("itho", "Command: TIMER 10min");
+                new_speed = 3;
+                new_timer = 600;
+                break;
+              case 0x14:  // 20 minutes
+                ESP_LOGI("itho", "Command: TIMER 20min");
+                new_speed = 3;
+                new_timer = 1200;
+                break;
+              case 0x1E:  // 30 minutes
+                ESP_LOGI("itho", "Command: TIMER 30min");
+                new_speed = 3;
+                new_timer = 1800;
+                break;
+              default:
+                ESP_LOGW("itho", "Unknown timer value: 0x%02X", decoded[10]);
+                break;
+            }
+          }
+        }
+        
+        // Update fan state
         if (new_speed > 0) {
           id(fan_speed) = new_speed;
           id(fan_timer) = new_timer;
-          id(last_source) = std::string(room_name);  // Use room name instead of device ID
+          id(last_source) = std::string(room_name);
           
           // Set flag to prevent re-transmission
           id(updating_from_packet) = true;
@@ -223,7 +278,6 @@ cc1101:
           } else if (new_timer == 1800) {
             call.set_preset_mode("Timer 30min");
           } else {
-            // No timer, clear preset mode
             call.set_preset_mode("");
           }
           
@@ -253,11 +307,131 @@ globals:
     type: bool
     restore_value: no
     initial_value: 'false'
+  # Rolling code counter for replay attack prevention
+  - id: rollcode
+    type: uint16_t
+    restore_value: yes
+    initial_value: '0'
   # Device ID bytes (configured via substitutions)
   - id: my_device_id
     type: uint8_t[3]
     restore_value: no
     initial_value: '{${device_id}}'
+
+# Helper script for Itho custom encoding and transmission
+# Encodes using custom "Manchester-like" encoding (NOT standard Manchester!)
+# Based on ESPEasy IthoCC1101.cpp and RonaldHiemstra implementation
+script:
+  - id: itho_encode_and_send
+    parameters:
+      command_bytes: "std::vector<uint8_t>"
+    then:
+      - lambda: |-
+          // Build decoded packet structure (24 bytes)
+          uint8_t decoded[24] = {0};
+          
+          // Byte 0: Counter
+          decoded[0] = id(rollcode) & 0xFF;
+          
+          // Bytes 1-3: Device ID
+          decoded[1] = id(my_device_id)[0];
+          decoded[2] = id(my_device_id)[1];
+          decoded[3] = id(my_device_id)[2];
+          
+          // Byte 4: Counter (again, for some reason)
+          decoded[4] = (id(rollcode) >> 8) & 0xFF;
+          
+          // Bytes 5-10: Command bytes (passed as parameter)
+          for (int i = 0; i < command_bytes.size() && i < 6; i++) {
+            decoded[5 + i] = command_bytes[i];
+          }
+          
+          // Calculate checksum (bytes 11+)
+          uint8_t checksum = 0;
+          for (int i = 1; i < 11; i++) {
+            checksum += decoded[i];
+          }
+          decoded[11] = (256 - checksum) & 0xFF;
+          
+          // Log decoded packet
+          std::string hex_decoded = "";
+          for (int i = 0; i < 12; i++) {
+            char buf[4];
+            sprintf(buf, "%02X ", decoded[i]);
+            hex_decoded += buf;
+          }
+          ESP_LOGD("itho", "Decoded packet to encode: %s", hex_decoded.c_str());
+          
+          // Custom Itho encoding: 24 decoded bytes → 63 raw bytes
+          // Inserts 1-0 pattern after every 8 data bits
+          uint8_t encoded[63] = {0};
+          int out_byte = 0;
+          int out_bit = 7;
+          int out_pattern_counter = 0;
+          
+          for (int byte_idx = 0; byte_idx < 12; byte_idx++) {
+            for (int bit_idx = 7; bit_idx >= 0; bit_idx--) {
+              // Check if we need to insert 1-0 pattern
+              if (out_pattern_counter == 8) {
+                out_pattern_counter = 0;
+                // Insert 1
+                encoded[out_byte] |= (1 << out_bit);
+                out_bit--;
+                if (out_bit < 0) {
+                  out_byte++;
+                  out_bit = 7;
+                }
+                // Insert 0
+                encoded[out_byte] |= (0 << out_bit);
+                out_bit--;
+                if (out_bit < 0) {
+                  out_byte++;
+                  out_bit = 7;
+                }
+              }
+              
+              // Add data bit
+              uint8_t bit = (decoded[byte_idx] >> bit_idx) & 0x01;
+              encoded[out_byte] |= (bit << out_bit);
+              out_bit--;
+              if (out_bit < 0) {
+                out_byte++;
+                out_bit = 7;
+              }
+              out_pattern_counter++;
+            }
+          }
+          
+          // Add preamble (7 bytes of 0xAA at start)
+          std::vector<uint8_t> packet;
+          for (int i = 0; i < 7; i++) {
+            packet.push_back(0xAA);
+          }
+          
+          // Add encoded data
+          for (int i = 0; i < out_byte; i++) {
+            packet.push_back(encoded[i]);
+          }
+          
+          // Add trailing pattern
+          for (int i = 0; i < 7; i++) {
+            packet.push_back(0xAA);
+          }
+          
+          // Log encoded packet
+          std::string hex_encoded = "";
+          for (auto b : packet) {
+            char buf[4];
+            sprintf(buf, "%02X ", b);
+            hex_encoded += buf;
+          }
+          ESP_LOGD("itho", "Encoded packet (%d bytes): %s", packet.size(), hex_encoded.c_str());
+          
+          // Increment rollcode for next transmission
+          id(rollcode)++;
+          
+          // Transmit
+          id(cc1101_transceiver).transmit_packet(packet);
 
 # Template fan for control
 fan:
@@ -280,15 +454,13 @@ fan:
               return;
             }
             
-            // Send LOW speed command via CC1101
-            std::vector<uint8_t> packet = {
-              // Itho LOW command (from ITHO-Lib: 34, 241, 3, 0, 2, 4)
-              0x16, 0xA4, id(my_device_id)[0], id(my_device_id)[1], id(my_device_id)[2],  // Header + Device ID
-              0x22, 0xF1, 0x03, 0x00, 0x02, 0x04  // LOW command
-            };
-            id(cc1101_transceiver).transmit_packet(packet);
+            ESP_LOGI("itho", "Sending LOW command");
             id(fan_speed) = 1;
             id(last_source) = "${controller_name}";
+            
+            // LOW command: 22 F1 03 00 02 04
+            std::vector<uint8_t> cmd = {0x22, 0xF1, 0x03, 0x00, 0x02, 0x04};
+            id(itho_encode_and_send).execute(cmd);
     
     on_turn_off:
       then:
@@ -299,14 +471,13 @@ fan:
               return;
             }
             
-            // Turn off = send LOW speed
-            std::vector<uint8_t> packet = {
-              0x16, 0xA4, id(my_device_id)[0], id(my_device_id)[1], id(my_device_id)[2],
-              0x22, 0xF1, 0x03, 0x00, 0x02, 0x04  // LOW command
-            };
-            id(cc1101_transceiver).transmit_packet(packet);
+            ESP_LOGI("itho", "Sending LOW command (turn off)");
             id(fan_speed) = 1;
             id(last_source) = "${controller_name}";
+            
+            // LOW command: 22 F1 03 00 02 04
+            std::vector<uint8_t> cmd = {0x22, 0xF1, 0x03, 0x00, 0x02, 0x04};
+            id(itho_encode_and_send).execute(cmd);
     
     # Speed control
     on_speed_set:
@@ -319,34 +490,28 @@ fan:
             }
             
             int speed = id(itho_ventilation).speed;
-            std::vector<uint8_t> packet;
+            std::vector<uint8_t> cmd;
             
-            // Base packet structure
-            packet.push_back(0x16);  // Preamble
-            packet.push_back(0xA4);  // Sync
-            packet.push_back(id(my_device_id)[0]);  // Device ID byte 1
-            packet.push_back(id(my_device_id)[1]);  // Device ID byte 2
-            packet.push_back(id(my_device_id)[2]);  // Device ID byte 3
-            
-            // Command bytes based on speed (from ITHO-Lib)
+            // Map speed to command bytes
             if (speed == 1) {
-              // LOW: 34, 241, 3, 0, 2, 4
-              packet.insert(packet.end(), {0x22, 0xF1, 0x03, 0x00, 0x02, 0x04});
+              // LOW: 22 F1 03 00 02 04
+              cmd = {0x22, 0xF1, 0x03, 0x00, 0x02, 0x04};
             } else if (speed == 2) {
-              // MEDIUM: 34, 241, 3, 0, 3, 4
-              packet.insert(packet.end(), {0x22, 0xF1, 0x03, 0x00, 0x03, 0x04});
-            } else if (speed == 3) {
-              // HIGH: 34, 241, 3, 0, 4, 4
-              packet.insert(packet.end(), {0x22, 0xF1, 0x03, 0x00, 0x04, 0x04});
-            } else if (speed == 4) {
-              // FULL: 34, 241, 3, 0, 4, 4 (same as HIGH)
-              packet.insert(packet.end(), {0x22, 0xF1, 0x03, 0x00, 0x04, 0x04});
+              // MEDIUM: 22 F1 03 00 03 04
+              cmd = {0x22, 0xF1, 0x03, 0x00, 0x03, 0x04};
+            } else if (speed == 3 || speed == 4) {
+              // HIGH: 22 F1 03 00 04 04
+              cmd = {0x22, 0xF1, 0x03, 0x00, 0x04, 0x04};
+            } else {
+              ESP_LOGW("itho", "Invalid speed: %d", speed);
+              return;
             }
             
-            id(cc1101_transceiver).transmit_packet(packet);
+            ESP_LOGI("itho", "Sending speed %d command", speed);
             id(fan_speed) = speed;
             id(last_source) = "${controller_name}";
-            ESP_LOGD("itho", "Sent speed %d command", speed);
+            
+            id(itho_encode_and_send).execute(cmd);
     
     # Preset modes (timers)
     on_preset_set:
@@ -359,26 +524,30 @@ fan:
             }
             
             std::string preset = id(itho_ventilation).get_preset_mode();
-            std::vector<uint8_t> packet = {0x16, 0xA4, id(my_device_id)[0], id(my_device_id)[1], id(my_device_id)[2]};
+            std::vector<uint8_t> cmd;
             
-            // Timer commands from ITHO-Lib
+            // Timer commands
             if (preset == "Timer 10min") {
-              // 34, 243, 3, 0, 0, 10
-              packet.insert(packet.end(), {0x22, 0xF3, 0x03, 0x00, 0x00, 0x0A});
+              // Timer 10min: 22 F3 03 00 00 0A
+              cmd = {0x22, 0xF3, 0x03, 0x00, 0x00, 0x0A};
               id(fan_timer) = 600;
             } else if (preset == "Timer 20min") {
-              // 34, 243, 3, 0, 0, 20
-              packet.insert(packet.end(), {0x22, 0xF3, 0x03, 0x00, 0x00, 0x14});
+              // Timer 20min: 22 F3 03 00 00 14
+              cmd = {0x22, 0xF3, 0x03, 0x00, 0x00, 0x14};
               id(fan_timer) = 1200;
             } else if (preset == "Timer 30min") {
-              // 34, 243, 3, 0, 0, 30
-              packet.insert(packet.end(), {0x22, 0xF3, 0x03, 0x00, 0x00, 0x1E});
+              // Timer 30min: 22 F3 03 00 00 1E
+              cmd = {0x22, 0xF3, 0x03, 0x00, 0x00, 0x1E};
               id(fan_timer) = 1800;
+            } else {
+              ESP_LOGW("itho", "Unknown preset: %s", preset.c_str());
+              return;
             }
             
-            id(cc1101_transceiver).transmit_packet(packet);
+            ESP_LOGI("itho", "Sending timer command: %s", preset.c_str());
             id(last_source) = "${controller_name}";
-            ESP_LOGD("itho", "Sent timer command: %s", preset.c_str());
+            
+            id(itho_encode_and_send).execute(cmd);
 
 # Text sensors for status
 text_sensor:
@@ -403,47 +572,60 @@ text_sensor:
     icon: "mdi:remote"
     lambda: |-
       return {id(last_source)};
+  
+  - platform: template
+    name: "Rollcode Counter"
+    id: rollcode_display
+    icon: "mdi:counter"
+    lambda: |-
+      char buffer[10];
+      sprintf(buffer, "%d", id(rollcode));
+      return {buffer};
+    update_interval: 60s
 
 # Buttons to pair/unpair CC1101 with Itho ventilation unit
 # IMPORTANT: Ventilation unit must be in pairing mode!
 # Power OFF the unit, wait 10 sec, power ON - unit is in pairing mode for 30 sec
+# 
+# ⚠️ WARNING: These JOIN/LEAVE commands are experimental and may not work
+# JOIN/LEAVE commands use identical encoding as ESPEASY plugin
+# Command bytes verified against jodur/ESPEASY_Plugin_ITHO
 button:
   - platform: template
     name: "Join/Pair CC1101 with Fan"
     id: join_button
     icon: "mdi:link-plus"
     on_press:
-      - logger.log: "Sending JOIN command - Ventilation unit must be freshly powered on!"
+      - logger.log: "Sending JOIN command to pair with ventilation unit"
+      - logger.log: "⚠️ Ventilation unit must be freshly powered on (within 2 minutes)!"
       - lambda: |-
-          // Send JOIN command to pair THIS CC1101 with the ventilation unit
-          // Uses OUR device_id to register as a new remote
-          // Command from ITHO-Lib: 31, 201, 12, 0, 34, 241
-          std::vector<uint8_t> packet = {
-            0x16, 0xA4, id(my_device_id)[0], id(my_device_id)[1], id(my_device_id)[2],  // Header + Device ID
-            0x1F, 0xC9, 0x0C, 0x00, 0x22, 0xF1  // JOIN command
-          };
-          id(cc1101_transceiver).transmit_packet(packet);
-          ESP_LOGI("itho", "JOIN command sent - CC1101 should now be paired with fan unit");
+          // Send JOIN command - uses same encoding as ESPEASY plugin
+          // JOIN command: 0x1F 0xC9 0x0C 0x00 0x1F 0xC9
+          // This is encoded and sent exactly like other commands (LOW/MEDIUM/HIGH)
+          std::vector<uint8_t> cmd = {0x1F, 0xC9, 0x0C, 0x00, 0x1F, 0xC9};
+          
+          ESP_LOGI("itho", "Sending JOIN command - pairing with unit");
+          id(itho_encode_and_send).execute(cmd);
       - delay: 2s
-      - logger.log: "JOIN complete - try controlling the fan from Home Assistant"
+      - logger.log: "JOIN command sent - check if unit LED confirms pairing"
 
   - platform: template
     name: "Leave/Unpair CC1101 from Fan"
     id: leave_button
     icon: "mdi:link-off"
     on_press:
-      - logger.log: "Sending LEAVE command - Ventilation unit must be freshly powered on!"
+      - logger.log: "Sending LEAVE command to unpair from ventilation unit"
+      - logger.log: "⚠️ Ventilation unit must be freshly powered on (within 2 minutes)!"
       - lambda: |-
-          // Send LEAVE command to unpair THIS CC1101 from the ventilation unit
-          // Command from ITHO-Lib: 31, 201, 6, 0, 31, 201
-          std::vector<uint8_t> packet = {
-            0x16, 0xA4, id(my_device_id)[0], id(my_device_id)[1], id(my_device_id)[2],  // Header + Device ID
-            0x1F, 0xC9, 0x06, 0x00, 0x1F, 0xC9  // LEAVE command
-          };
-          id(cc1101_transceiver).transmit_packet(packet);
-          ESP_LOGI("itho", "LEAVE command sent - CC1101 should now be unpaired from fan unit");
+          // Send LEAVE command - uses same encoding as ESPEASY plugin
+          // LEAVE command: 0x1F 0xC9 0x06 0x00 0x1F 0xC9
+          // This is encoded and sent exactly like other commands (LOW/MEDIUM/HIGH)
+          std::vector<uint8_t> cmd = {0x1F, 0xC9, 0x06, 0x00, 0x1F, 0xC9};
+          
+          ESP_LOGI("itho", "Sending LEAVE command - unpairing from unit");
+          id(itho_encode_and_send).execute(cmd);
       - delay: 2s
-      - logger.log: "LEAVE complete"
+      - logger.log: "LEAVE command sent - device should be unpaired"
 
 # Timer countdown (runs every second)
 interval:
