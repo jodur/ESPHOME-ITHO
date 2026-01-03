@@ -100,179 +100,133 @@ cc1101:
     - lambda: |-
         ESP_LOGD("itho", "Received packet, RSSI: %.1f dBm, Size: %d", rssi, x.size());
         
-        // Log raw packet
-        std::string hex_raw = "";
-        for (auto b : x) {
-          char buf[4];
-          sprintf(buf, "%02X ", b);
-          hex_raw += buf;
-        }
-        ESP_LOGD("itho", "Raw packet: %s", hex_raw.c_str());
-        
         // ============================================================
-        // ITHO CUSTOM "MANCHESTER-LIKE" DECODER
-        // ============================================================
-        // Based on ESPEasy IthoCC1101.cpp and RonaldHiemstra implementation
-        // NOT standard Manchester! Extracts even bits (0,2,4,6) from 10-bit groups
-        // 63 raw bytes → 24 decoded bytes
+        // HELPER FUNCTIONS (inline)
         // ============================================================
         
-        const int STARTBYTE = 2;  // Skip first 2 bytes after sync
-        if (x.size() < 10) {
-          ESP_LOGW("itho", "Packet too short: %d bytes", x.size());
-          return;
-        }
+        // Helper: Log packet as hex string
+        auto log_packet = [](const char* label, const std::vector<uint8_t>& data, int max_bytes = -1) {
+          std::string hex = "";
+          int count = (max_bytes < 0) ? data.size() : std::min((int)data.size(), max_bytes);
+          for (int i = 0; i < count; i++) {
+            char buf[4];
+            sprintf(buf, "%02X ", data[i]);
+            hex += buf;
+          }
+          ESP_LOGD("itho", "%s: %s", label, hex.c_str());
+        };
         
-        // Decode using custom Itho encoding
-        uint8_t decoded[24] = {0};
-        int out_byte = 0;
-        int out_bit = 4;
-        int in_bitcounter = 0;
-        
-        for (int i = STARTBYTE; i < x.size() && out_byte < 24; i++) {
-          for (int j = 7; j >= 0 && out_byte < 24; j--) {
-            // Extract even bits (0, 2, 4, 6) from 10-bit groups
-            if (in_bitcounter == 0 || in_bitcounter == 2 || in_bitcounter == 4 || in_bitcounter == 6) {
-              uint8_t bit = (x[i] >> j) & 0x01;
-              decoded[out_byte] |= (bit << out_bit);
-              out_bit--;
+        // Helper: Decode Itho custom Manchester-like encoding
+        // 63 raw bytes → 24 decoded bytes (extracts even bits from 10-bit groups)
+        auto decode_packet = [](const std::vector<uint8_t>& raw, uint8_t* decoded) -> bool {
+          const int STARTBYTE = 2;  // Skip first 2 bytes after sync
+          if (raw.size() < 10) {
+            ESP_LOGW("itho", "Packet too short: %d bytes", raw.size());
+            return false;
+          }
+          
+          int out_byte = 0;
+          int out_bit = 4;
+          int in_bitcounter = 0;
+          
+          for (int i = STARTBYTE; i < raw.size() && out_byte < 24; i++) {
+            for (int j = 7; j >= 0 && out_byte < 24; j--) {
+              // Extract even bits (0, 2, 4, 6) from 10-bit groups
+              if (in_bitcounter == 0 || in_bitcounter == 2 || in_bitcounter == 4 || in_bitcounter == 6) {
+                uint8_t bit = (raw[i] >> j) & 0x01;
+                decoded[out_byte] |= (bit << out_bit);
+                out_bit--;
+                
+                if (out_bit < 0) {
+                  out_byte++;
+                  out_bit = 7;
+                }
+              }
               
-              if (out_bit < 0) {
-                out_byte++;
-                out_bit = 7;
+              in_bitcounter++;
+              if (in_bitcounter >= 10) {
+                in_bitcounter = 0;
               }
             }
-            
-            in_bitcounter++;
-            if (in_bitcounter >= 10) {
-              in_bitcounter = 0;
-            }
           }
-        }
-        
-        // Log decoded packet
-        std::string hex_decoded = "";
-        for (int i = 0; i < 24; i++) {
-          char buf[4];
-          sprintf(buf, "%02X ", decoded[i]);
-          hex_decoded += buf;
-        }
-        ESP_LOGD("itho", "Decoded packet: %s", hex_decoded.c_str());
-        
-        // Extract device ID (bytes 1-3)
-        char device_id[16];
-        sprintf(device_id, "%d,%d,%d", decoded[1], decoded[2], decoded[3]);
-        ESP_LOGD("itho", "Device ID: %s (hex: %02X,%02X,%02X)", 
-                 device_id, decoded[1], decoded[2], decoded[3]);
-        
-        // ===== ALLOWED REMOTE IDs LIST =====
-        struct RemoteID {
-          const char* id;
-          const char* room_name;
+          return true;
         };
         
-        RemoteID allowed_remotes[] = {
-          {"51,40,61", "Badkamer"},   // Remote 1 - decimal: 51,40,61 (hex: 0x33,0x28,0x3D)
-          {"73,82,11", "Toilet"},     // Remote 2 - decimal: 73,82,11 (hex: 0x49,0x52,0x0B)
-          {"10,87,81", "Keuken"}      // Remote 3 - decimal: 10,87,81 (hex: 0x0A,0x57,0x51)
-          // CHANGE THESE TO YOUR ACTUAL REMOTE IDs!
+        // Helper: Check if device ID is in whitelist
+        auto check_whitelist = [](const char* device_id) -> const char* {
+          struct RemoteID {
+            const char* id;
+            const char* room_name;
+          };
+          
+          RemoteID allowed_remotes[] = {
+            {"51,40,61", "Badkamer"},   // Remote 1 - decimal: 51,40,61 (hex: 0x33,0x28,0x3D)
+            {"73,82,11", "Toilet"},     // Remote 2 - decimal: 73,82,11 (hex: 0x49,0x52,0x0B)
+            {"10,87,81", "Keuken"}      // Remote 3 - decimal: 10,87,81 (hex: 0x0A,0x57,0x51)
+            // CHANGE THESE TO YOUR ACTUAL REMOTE IDs!
+          };
+          
+          for (auto& remote : allowed_remotes) {
+            if (strcmp(device_id, remote.id) == 0) {
+              return remote.room_name;
+            }
+          }
+          return nullptr;  // Not in whitelist
         };
         
-        // Check if device ID is in allowed list
-        bool device_allowed = false;
-        const char* room_name = "Unknown";
-        
-        for (auto& remote : allowed_remotes) {
-          if (strcmp(device_id, remote.id) == 0) {
-            device_allowed = true;
-            room_name = remote.room_name;
-            break;
-          }
-        }
-        
-        if (!device_allowed) {
-          ESP_LOGW("itho", "Ignored packet from unknown device: %s", device_id);
-          return;
-        }
-        
-        ESP_LOGI("itho", "Accepted command from: %s (%s)", room_name, device_id);
-        
-        // Parse command bytes (bytes 5-10)
-        // Command patterns (identical to ESPEASY plugin):
-        // Low:    22 F1 03 00 02 04
-        // Medium: 22 F1 03 00 03 04
-        // High:   22 F1 03 00 04 04
-        // Timer:  22 F3 03 00 00 0A/14/1E
-        // JOIN:   1F C9 0C 00 1F C9
-        // LEAVE:  1F C9 06 00 1F C9
-        
-        int new_speed = -1;
-        int new_timer = 0;
-        
-        // Check for JOIN/LEAVE commands first
-        if (decoded[5] == 0x1F && decoded[6] == 0xC9 && decoded[9] == 0x1F && decoded[10] == 0xC9) {
-          if (decoded[7] == 0x0C && decoded[8] == 0x00) {
-            ESP_LOGI("itho", "Command: JOIN/PAIR - Remote %s is pairing", device_id);
-            // JOIN command received - log only, don't change fan state
-            return;
-          } else if (decoded[7] == 0x06 && decoded[8] == 0x00) {
-            ESP_LOGI("itho", "Command: LEAVE/UNPAIR - Remote %s is unpairing", device_id);
-            // LEAVE command received - log only, don't change fan state
-            return;
-          }
-        }
-        
-        // Check for speed/timer commands
-        if (decoded[5] == 0x22 && decoded[7] == 0x03) {
-          if (decoded[6] == 0xF1) {
-            // Speed command
-            switch (decoded[9]) {
-              case 0x02:
-                ESP_LOGI("itho", "Command: LOW speed");
-                new_speed = 1;
-                break;
-              case 0x03:
-                ESP_LOGI("itho", "Command: MEDIUM speed");
-                new_speed = 2;
-                break;
-              case 0x04:
-                ESP_LOGI("itho", "Command: HIGH speed");
-                new_speed = 3;
-                break;
-              default:
-                ESP_LOGW("itho", "Unknown speed byte: 0x%02X", decoded[9]);
-                break;
-            }
-          } else if (decoded[6] == 0xF3) {
-            // Timer command
-            switch (decoded[10]) {
-              case 0x0A:  // 10 minutes
-                ESP_LOGI("itho", "Command: TIMER 10min");
-                new_speed = 3;
-                new_timer = 600;
-                break;
-              case 0x14:  // 20 minutes
-                ESP_LOGI("itho", "Command: TIMER 20min");
-                new_speed = 3;
-                new_timer = 1200;
-                break;
-              case 0x1E:  // 30 minutes
-                ESP_LOGI("itho", "Command: TIMER 30min");
-                new_speed = 3;
-                new_timer = 1800;
-                break;
-              default:
-                ESP_LOGW("itho", "Unknown timer value: 0x%02X", decoded[10]);
-                break;
+        // Helper: Parse command bytes and return speed/timer
+        auto parse_command = [](const uint8_t* decoded, int& speed, int& timer) -> bool {
+          // Command patterns (identical to ESPEASY plugin):
+          // Low:    22 F1 03 00 02 04
+          // Medium: 22 F1 03 00 03 04
+          // High:   22 F1 03 00 04 04
+          // Timer:  22 F3 03 00 00 0A/14/1E
+          // JOIN:   1F C9 0C 00 1F C9
+          // LEAVE:  1F C9 06 00 1F C9
+          
+          speed = -1;
+          timer = 0;
+          
+          // Check for JOIN/LEAVE commands
+          if (decoded[5] == 0x1F && decoded[6] == 0xC9 && decoded[9] == 0x1F && decoded[10] == 0xC9) {
+            if (decoded[7] == 0x0C && decoded[8] == 0x00) {
+              ESP_LOGI("itho", "Command: JOIN/PAIR");
+              return false;  // Don't update fan state
+            } else if (decoded[7] == 0x06 && decoded[8] == 0x00) {
+              ESP_LOGI("itho", "Command: LEAVE/UNPAIR");
+              return false;  // Don't update fan state
             }
           }
-        }
+          
+          // Check for speed/timer commands
+          if (decoded[5] == 0x22 && decoded[7] == 0x03) {
+            if (decoded[6] == 0xF1) {
+              // Speed command
+              switch (decoded[9]) {
+                case 0x02: ESP_LOGI("itho", "Command: LOW speed"); speed = 1; break;
+                case 0x03: ESP_LOGI("itho", "Command: MEDIUM speed"); speed = 2; break;
+                case 0x04: ESP_LOGI("itho", "Command: HIGH speed"); speed = 3; break;
+                default: ESP_LOGW("itho", "Unknown speed byte: 0x%02X", decoded[9]); break;
+              }
+            } else if (decoded[6] == 0xF3) {
+              // Timer command
+              switch (decoded[10]) {
+                case 0x0A: ESP_LOGI("itho", "Command: TIMER 10min"); speed = 3; timer = 600; break;
+                case 0x14: ESP_LOGI("itho", "Command: TIMER 20min"); speed = 3; timer = 1200; break;
+                case 0x1E: ESP_LOGI("itho", "Command: TIMER 30min"); speed = 3; timer = 1800; break;
+                default: ESP_LOGW("itho", "Unknown timer value: 0x%02X", decoded[10]); break;
+              }
+            }
+          }
+          
+          return (speed > 0);
+        };
         
-        // Update fan state
-        if (new_speed > 0) {
-          id(fan_speed) = new_speed;
-          id(fan_timer) = new_timer;
-          id(last_source) = std::string(room_name);
+        // Helper: Update fan entity
+        auto update_fan = [](int speed, int timer, const char* source) {
+          id(fan_speed) = speed;
+          id(fan_timer) = timer;
+          id(last_source) = std::string(source);
           
           // Set flag to prevent re-transmission
           id(updating_from_packet) = true;
@@ -280,14 +234,14 @@ cc1101:
           // Update fan entity
           auto call = id(itho_ventilation).make_call();
           call.set_state(true);
-          call.set_speed(new_speed);
+          call.set_speed(speed);
           
           // Set preset mode if timer is active
-          if (new_timer == 600) {
+          if (timer == 600) {
             call.set_preset_mode("Timer 10min");
-          } else if (new_timer == 1200) {
+          } else if (timer == 1200) {
             call.set_preset_mode("Timer 20min");
-          } else if (new_timer == 1800) {
+          } else if (timer == 1800) {
             call.set_preset_mode("Timer 30min");
           } else {
             call.set_preset_mode("");
@@ -298,8 +252,44 @@ cc1101:
           // Clear flag after update
           id(updating_from_packet) = false;
           
-          ESP_LOGI("itho", "Updated fan: speed=%d, timer=%ds, source=%s", 
-                   new_speed, new_timer, room_name);
+          ESP_LOGI("itho", "Updated fan: speed=%d, timer=%ds, source=%s", speed, timer, source);
+        };
+        
+        // ============================================================
+        // MAIN PACKET PROCESSING
+        // ============================================================
+        
+        // Log raw packet
+        log_packet("Raw packet", x);
+        
+        // Decode packet using custom Itho encoding
+        uint8_t decoded[24] = {0};
+        if (!decode_packet(x, decoded)) {
+          return;  // Decoding failed
+        }
+        
+        // Log decoded packet
+        std::vector<uint8_t> decoded_vec(decoded, decoded + 24);
+        log_packet("Decoded packet", decoded_vec, 12);
+        
+        // Extract and check device ID (bytes 1-3)
+        char device_id[16];
+        sprintf(device_id, "%d,%d,%d", decoded[1], decoded[2], decoded[3]);
+        ESP_LOGD("itho", "Device ID: %s (hex: %02X,%02X,%02X)", 
+                 device_id, decoded[1], decoded[2], decoded[3]);
+        
+        const char* room_name = check_whitelist(device_id);
+        if (!room_name) {
+          ESP_LOGW("itho", "Ignored packet from unknown device: %s", device_id);
+          return;
+        }
+        
+        ESP_LOGI("itho", "Accepted command from: %s (%s)", room_name, device_id);
+        
+        // Parse command and update fan if needed
+        int new_speed, new_timer;
+        if (parse_command(decoded, new_speed, new_timer)) {
+          update_fan(new_speed, new_timer, room_name);
         }
 
 globals:
