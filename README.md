@@ -124,7 +124,7 @@ Use the decimal values `51,40,61` in your configuration.
 The `itho.yaml` configuration provides:
 
 - **Fan Entity**: `fan.itho_ventilation`
-  - 4 speed levels (Low, Medium, High, Full)
+  - 4 speed levels (Low, Medium, High, High) - speeds 3 & 4 both map to High
   - 3 timer presets (10min, 20min, 30min)
   
 - **Text Sensors**:
@@ -156,7 +156,7 @@ These settings are based on verified community examples and match the original I
 
 The fan appears as a native fan entity with:
 - **On/Off** control
-- **4-speed slider**: Low (1), Medium (2), High (3), Full (4)
+- **4-speed slider**: Low (1), Medium (2), High (3), High (4) - speeds 3 & 4 both send HIGH command
 - **Preset modes**: "Timer 10min", "Timer 20min", "Timer 30min"
 
 ### Example Automations
