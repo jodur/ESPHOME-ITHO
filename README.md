@@ -94,7 +94,12 @@ This implementation uses **100% verified Itho protocol** with custom Manchester-
    };
    ```
    
-   Only commands from these device IDs will be accepted (security feature).
+   **Important about the whitelist**:
+   - ⚠️ The whitelist **only controls which remotes update the Home Assistant status**
+   - It does **NOT** prevent remotes from controlling the ventilation unit itself
+   - The ventilation unit has its own paired remote list (via JOIN/LEAVE commands)
+   - **To keep Home Assistant in sync**: Add ALL remotes that are paired with the ventilation unit to this whitelist
+   - If a paired remote is not in the whitelist, the fan will respond but Home Assistant won't show the correct status
 
 5. **Compile and flash**:
    ```bash
@@ -213,7 +218,18 @@ To remove the CC1101/ESP from the ventilation unit:
 
 ### Pairing Physical Itho Remotes (Original Remotes)
 
-Physical Itho remotes are paired directly with the ventilation unit using their own pairing procedure (consult your Itho remote manual). The CC1101/ESP will receive and display commands from these paired remotes if their IDs are in the `allowed_remotes` whitelist.
+Physical Itho remotes are paired directly with the ventilation unit using their own pairing procedure (consult your Itho remote manual).
+
+**Important**: After pairing a physical remote to the ventilation unit:
+1. Press a button on the remote to generate RF traffic
+2. Check the ESPHome logs to see the remote's device ID
+3. **Add the device ID to the `allowed_remotes` whitelist** in your configuration
+4. Reflash the ESP8266 with the updated configuration
+
+If you don't add paired remotes to the whitelist:
+- ✅ The remote will still control the ventilation unit (this happens directly)
+- ❌ Home Assistant won't update its status when the remote is used
+- ❌ You'll have a **sync problem**: The fan speed in Home Assistant won't match the actual fan speed
 
 ## Migration from Version 1.x (C++ Component)
 
