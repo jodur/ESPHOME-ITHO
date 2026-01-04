@@ -432,8 +432,15 @@ script:
           // Increment rollcode for next transmission
           id(rollcode)++;
           
-          // Transmit
-          id(cc1101_transceiver).transmit_packet(packet);
+          // Transmit 3x for reliability (matches ESPEasy sendTries=3 behavior)
+          // Delay 10ms between transmissions
+          for (int i = 0; i < 3; i++) {
+            if (i > 0) {
+              delay(10);  // 10ms delay between retries
+            }
+            ESP_LOGD("itho", "Transmitting packet (attempt %d/3)", i + 1);
+            id(cc1101_transceiver).transmit_packet(packet);
+          }
 
 # Template fan for control
 fan:
