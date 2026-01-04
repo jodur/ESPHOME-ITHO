@@ -274,29 +274,29 @@ void IthoFan::update_state() {
   
   int state = hub_->get_state();
   
-  // Create a fan call to update state
-  auto call = this->make_call();
-  
+  // Update state directly without triggering control()
   // Map state to fan speed
   if (state >= 10) {
     // Timer mode - treat as high speed
-    call.set_speed(3);
+    this->speed = 3;
+    this->state = true;
     
     // Set preset based on timer state
     if (state == 13) {
-      call.set_preset_mode("Timer 10min");
+      this->set_preset_mode_("Timer 10min");
     } else if (state == 23) {
-      call.set_preset_mode("Timer 20min");
+      this->set_preset_mode_("Timer 20min");
     } else if (state == 33) {
-      call.set_preset_mode("Timer 30min");
+      this->set_preset_mode_("Timer 30min");
     }
   } else {
-    call.set_preset_mode("");
-    call.set_speed(state);
+    this->set_preset_mode_("");
+    this->speed = state;
+    this->state = state > 0;
   }
   
-  call.set_state(state > 0);
-  call.perform();
+  // Publish the updated state to Home Assistant
+  this->publish_state();
 }
 
 }  // namespace itho_fan
