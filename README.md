@@ -150,6 +150,14 @@ The configuration uses verified Itho protocol settings:
 - **CRC**: Disabled
 - **Whitening**: Disabled
 
+### RF Reliability Features
+
+All commands are automatically sent **3 times with 10ms delay** between transmissions. This proven pattern:
+- Matches the ESPEasy `sendTries=3` implementation  
+- Significantly improves command reliability in noisy RF environments
+- Is especially important for JOIN/LEAVE pairing commands
+- Helps overcome temporary RF interference or obstructions
+
 These settings are based on verified community examples and match the original Itho protocol exactly.
 
 ## Usage in Home Assistant
@@ -290,6 +298,7 @@ The fan entity name and functionality remain the same, so your Home Assistant au
 - ✅ **Device Whitelist**: Security filtering for known remotes
 - ✅ **Auto Boot to LOW**: Fan automatically sets to LOW speed on startup (100% feature parity with v1.x)
 - ✅ **Refactored Decoder**: Improved code readability with inline helper functions for maintainability
+- ✅ **3x Command Retry**: All commands sent 3 times with 10ms delay for RF reliability (matches ESPEasy sendTries=3)
 - ✅ **Room Tracking**: Display which remote triggered command
 - ✅ **Timer Countdown**: Automatic fan state management
 - ✅ **Anti-Retransmit**: Prevents packet loops
@@ -298,6 +307,7 @@ The fan entity name and functionality remain the same, so your Home Assistant au
 - ✅ **Checksum Algorithm**: 256 - sum(bytes 1-10)
 - ✅ **Packet Structure**: 24-byte decoded format documented
 - ✅ **RF Settings**: 2-FSK, 868.2999MHz, 38.383kBaud verified
+- ✅ **Retry Mechanism**: 3x transmission with 10ms delay (proven ESPEasy pattern)
 - ✅ **Compilation**: Successful on ESP8266 (39.7% RAM, 39.6% Flash)
 
 ### v1.x - C++ Component Implementation
