@@ -1,5 +1,18 @@
 esphome:
   name: fancontrol
+  on_boot:
+    priority: -100
+    then:
+      - lambda: |-
+          id(itho_hub).register_state_sensor(id(fan_state_numeric));
+          id(itho_hub).register_speed_sensor(id(fanspeed));
+          id(itho_hub).register_timer_sensor(id(fan_timer));
+          id(itho_hub).register_controller_sensor(id(last_controller));
+      - delay: 100ms
+      - lambda: |-
+          // Send Low command after sensors are registered to sync ESP with fan
+          id(itho_hub).send_command(1);
+          ESP_LOGI("itho", "Sent Low command on boot for synchronization");
 
 esp8266:
   board: d1_mini
@@ -15,47 +28,75 @@ external_components:
 itho_fan:
   id: itho_hub
   device_id: "10,87,81"
+  device_name: "New ESP"
   interrupt_pin: D1
   remote_ids:
     - remote_id: "51,40,61"
       room_name: "Badkamer"
-    - remote_id: "73,82,11"
-      room_name: "Toilet"
 
-fan:
-  - platform: itho_fan
-    id: itho_fan_component
-    itho_hub_id: itho_hub
-    name: "Itho Ventilation"
+button:
+  - platform: template
+    name: "Fan Low"
+    icon: "mdi:fan-speed-1"
+    on_press:
+      - lambda: |-
+          id(itho_hub).send_command(1);
+  
+  - platform: template
+    name: "Fan Medium"
+    icon: "mdi:fan-speed-2"
+    on_press:
+      - lambda: |-
+          id(itho_hub).send_command(2);
+  
+  - platform: template
+    name: "Fan High"
+    icon: "mdi:fan-speed-3"
+    on_press:
+      - lambda: |-
+          id(itho_hub).send_command(3);
+  
+  - platform: template
+    name: "Join Remote"
+    icon: "mdi:remote-desktop"
+    on_press:
+      - lambda: |-
+          id(itho_hub).send_join();
+  
+  - platform: template
+    name: "Leave Remote"
+    icon: "mdi:close-network"
+    on_press:
+      - lambda: |-
+          id(itho_hub).send_leave();
+
+sensor:
+  - platform: template
+    name: "Fan State"
+    id: fan_state_numeric
+    icon: "mdi:fan"
 
 text_sensor:
+  - platform: template
+    name: "Fan Speed"
+    id: fanspeed
+    icon: "mdi:fan"
+    
   - platform: template
     name: "Fan Timer Remaining"
     id: fan_timer
     icon: "mdi:timer"
-    lambda: |-
-      if (id(itho_hub).get_timer() > 0) {
-        int minutes = id(itho_hub).get_timer() / 60;
-        int seconds = id(itho_hub).get_timer() % 60;
-        char buffer[20];
-        sprintf(buffer, "%d:%02d", minutes, seconds);
-        return {buffer};
-      }
-      return {"0"};
-    update_interval: 1s
     
   - platform: template
     name: "Last Control Source"
     id: last_controller
     icon: "mdi:remote"
-    lambda: |-
-      return {id(itho_hub).get_last_id()};
-    update_interval: 1s
 
 wifi:
   ssid: !secret wifi_ssid
   password: !secret wifi_password
   fast_connect: true
+  min_auth_mode: WPA2
   ap:
     ssid: "FALLBACK AP"
     password: "jdsh348201"
@@ -66,6 +107,12 @@ logger:
   level: DEBUG
 
 api:
+  on_client_connected:
+    then:
+      - lambda: |-
+          // Handle Home Assistant connection (republish states and send boot sync)
+          ESP_LOGI("itho", "Home Assistant connected");
+          id(itho_hub).on_homeassistant_connected();
 
 ota:
   - platform: esphome
@@ -76,3 +123,5 @@ ota:
             if (id(itho_hub).get_interrupt_pin() != nullptr) {
               id(itho_hub).get_interrupt_pin()->detach_interrupt();
             }
+
+# For Home Assistant template fan configuration example, see README.md

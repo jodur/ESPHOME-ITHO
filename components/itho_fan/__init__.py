@@ -9,6 +9,7 @@ DEPENDENCIES = []
 AUTO_LOAD = ["fan"]
 
 CONF_DEVICE_ID = "device_id"
+CONF_DEVICE_NAME = "device_name"
 CONF_REMOTE_IDS = "remote_ids"
 CONF_REMOTE_ID = "remote_id"
 CONF_ROOM_NAME = "room_name"
@@ -28,6 +29,7 @@ CONFIG_SCHEMA = cv.Schema(
     {
         cv.GenerateID(): cv.declare_id(IthoFanHub),
         cv.Required(CONF_DEVICE_ID): cv.string,
+        cv.Optional(CONF_DEVICE_NAME, default="ESPHome"): cv.string,
         cv.Optional(CONF_REMOTE_IDS, default=[]): cv.ensure_list(REMOTE_SCHEMA),
         cv.Required(CONF_PIN_INTERRUPT): pins.gpio_input_pin_schema,
     }
@@ -48,6 +50,9 @@ async def to_code(config):
                 int(device_id_parts[2]),
             )
         )
+    
+    # Set device name
+    cg.add(var.set_device_name(config[CONF_DEVICE_NAME]))
 
     # Set remote IDs
     for remote in config[CONF_REMOTE_IDS]:

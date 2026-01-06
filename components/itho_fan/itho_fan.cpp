@@ -65,6 +65,9 @@ void IthoFanHub::loop() {
     if (state_ >= 10 && timer_ > 0) {
       timer_--;
       
+      // Match master branch: publish all sensors when timer is running
+      publish_sensors();
+      
       if (timer_ <= 0) {
         set_state(1, 0, last_id_);
       }
@@ -104,31 +107,31 @@ void IthoFanHub::send_command(uint8_t command) {
   switch (command) {
     case 1:
       rf_.sendCommand(IthoLow);
-      set_state(1, 0, device_id_);
+      set_state(1, 0, device_name_);
       break;
     case 2:
       rf_.sendCommand(IthoMedium);
-      set_state(2, 0, device_id_);
+      set_state(2, 0, device_name_);
       break;
     case 3:
       rf_.sendCommand(IthoHigh);
-      set_state(3, 0, device_id_);
+      set_state(3, 0, device_name_);
       break;
     case 4:
       rf_.sendCommand(IthoFull);
-      set_state(4, 0, device_id_);
+      set_state(4, 0, device_name_);
       break;
     case 13:
       rf_.sendCommand(IthoTimer1);
-      set_state(13, TIME_10MIN, device_id_);
+      set_state(13, TIME_10MIN, device_name_);
       break;
     case 23:
       rf_.sendCommand(IthoTimer2);
-      set_state(23, TIME_20MIN, device_id_);
+      set_state(23, TIME_20MIN, device_name_);
       break;
     case 33:
       rf_.sendCommand(IthoTimer3);
-      set_state(33, TIME_30MIN, device_id_);
+      set_state(33, TIME_30MIN, device_name_);
       break;
   }
   
@@ -140,10 +143,70 @@ void IthoFanHub::send_command(uint8_t command) {
   }
 }
 
+void IthoFanHub::send_join() {
+  noInterrupts();
+  rf_.sendCommand(IthoJoin);
+  interrupts();
+  rf_.initReceive();
+  ESP_LOGI(TAG, "Join command sent");
+}
+
+void IthoFanHub::send_leave() {
+  noInterrupts();
+  rf_.sendCommand(IthoLeave);
+  interrupts();
+  rf_.initReceive();
+  ESP_LOGI(TAG, "Leave command sent");
+}
+
 void IthoFanHub::set_state(int state, int timer, const std::string &id) {
+  bool state_changed = (state_ != state);
+  
   state_ = state;
   timer_ = timer;
   last_id_ = id;
+  
+  // Match master branch: publish when state changes
+  if (state_changed) {
+    publish_sensors();
+  }
+}
+
+void IthoFanHub::publish_sensors() {
+  // Publish all sensors together (matches master branch behavior)
+  if (state_sensor_ != nullptr) {
+    state_sensor_->publish_state(state_);
+  }
+  
+  if (speed_sensor_ != nullptr) {
+    std::string speed_text;
+    if (state_ == 1) speed_text = "Low";
+    else if (state_ == 2) speed_text = "Medium";
+    else if (state_ == 3 || state_ == 13 || state_ == 23 || state_ == 33) speed_text = "High";
+    else speed_text = "Unknown";
+    speed_sensor_->publish_state(speed_text);
+  }
+  
+  if (timer_sensor_ != nullptr) {
+    if (timer_ > 0) {
+      int minutes = timer_ / 60;
+      int seconds = timer_ % 60;
+      char buffer[20];
+      sprintf(buffer, "%d:%02d", minutes, seconds);
+      timer_sensor_->publish_state(buffer);
+    } else {
+      timer_sensor_->publish_state("0");
+    }
+  }
+  
+  if (controller_sensor_ != nullptr) {
+    controller_sensor_->publish_state(last_id_);
+  }
+}
+
+void IthoFanHub::on_homeassistant_connected() {
+  // Publish current state to Home Assistant (don't change fan state)
+  publish_sensors();
 }
 
 int IthoFanHub::get_remote_index(const std::string &id) {
@@ -172,33 +235,64 @@ void IthoFanHub::process_packet() {
         case IthoLow:
         case DucoLow:
           ESP_LOGD(TAG, "Received Low from %s", room_name.c_str());
-          set_state(1, 0, room_name);
+          if (state_ != 1) {
+            set_state(1, 0, room_name);
+          } else {
+            ESP_LOGD(TAG, "Already in Low state");
+          }
           break;
         case IthoMedium:
         case DucoMedium:
           ESP_LOGD(TAG, "Received Medium from %s", room_name.c_str());
-          set_state(2, 0, room_name);
+          if (state_ != 2) {
+            set_state(2, 0, room_name);
+          } else {
+            ESP_LOGD(TAG, "Already in Medium state");
+          }
           break;
         case IthoHigh:
         case DucoHigh:
           ESP_LOGD(TAG, "Received High from %s", room_name.c_str());
-          set_state(3, 0, room_name);
+          if (state_ != 3) {
+            set_state(3, 0, room_name);
+          } else {
+            ESP_LOGD(TAG, "Already in High state");
+          }
           break;
         case IthoFull:
           ESP_LOGD(TAG, "Received Full from %s", room_name.c_str());
-          set_state(4, 0, room_name);
+          if (state_ != 4) {
+            set_state(4, 0, room_name);
+          } else {
+            ESP_LOGD(TAG, "Already in Full state");
+          }
           break;
         case IthoTimer1:
           ESP_LOGD(TAG, "Received Timer1 from %s", room_name.c_str());
-          set_state(13, TIME_10MIN, room_name);
+          if (state_ != 13) {
+            set_state(13, TIME_10MIN, room_name);
+          } else {
+            ESP_LOGD(TAG, "Already in Timer1 state, resetting timer");
+            set_state(13, TIME_10MIN, room_name);  // Reset timer even if already in timer mode
+          }
           break;
         case IthoTimer2:
           ESP_LOGD(TAG, "Received Timer2 from %s", room_name.c_str());
-          set_state(23, TIME_20MIN, room_name);
+          if (state_ != 23) {
+            set_state(23, TIME_20MIN, room_name);
+          } else {
+            ESP_LOGD(TAG, "Already in Timer2 state, resetting timer");
+            set_state(23, TIME_20MIN, room_name);  // Reset timer even if already in timer mode
+          }
           break;
         case IthoTimer3:
           ESP_LOGD(TAG, "Received Timer3 from %s", room_name.c_str());
-          set_state(33, TIME_30MIN, room_name);
+          if (state_ != 33) {
+            set_state(33, TIME_30MIN, room_name);
+          } else {
+            ESP_LOGD(TAG, "Already in Timer3 state, resetting timer");
+            set_state(33, TIME_30MIN, room_name);  // Reset timer even if already in timer mode
+          }
           break;
         default:
           break;
