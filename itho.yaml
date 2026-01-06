@@ -110,7 +110,7 @@ api:
   on_client_connected:
     then:
       - lambda: |-
-          // Handle Home Assistant connection (republish states and send boot sync)
+          // Handle Home Assistant connection (republish current state only)
           ESP_LOGI("itho", "Home Assistant connected");
           id(itho_hub).on_homeassistant_connected();
 
