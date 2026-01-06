@@ -106,7 +106,9 @@ text_sensor:
 
 ## Home Assistant Integration
 
-Add this to your Home Assistant `configuration.yaml` to create a fan entity where OFF = Low speed (matching the original master branch behavior):
+Add this to your Home Assistant `configuration.yaml` to create a fan entity where OFF = Low speed (matching the original master branch behavior).
+
+**Note:** Replace `fancontrol` in the example below with your ESPHome `device_name` (e.g., `new_esp`).
 
 ```yaml
 fan:
@@ -115,23 +117,23 @@ fan:
       afzuiging_badkamer:
         friendly_name: "Afzuiging badkamer"
         value_template: >
-          {{ "off" if states('sensor.fanspeed') == 'Low' else "on" }}
+          {{ "off" if states('sensor.fancontrol_fan_speed') == 'Low' else "on" }}
         percentage_template: >
           {% set speedperc = {'Low': 0, 'Medium': 50, 'High': 100} %}
-          {{ speedperc[states('sensor.fanspeed')] }}
+          {{ speedperc[states('sensor.fancontrol_fan_speed')] }}
         turn_on:
           service: button.press
           data:
-            entity_id: button.fan_high
+            entity_id: button.fancontrol_fan_high
         turn_off:
           service: button.press
           data:
-            entity_id: button.fan_low
+            entity_id: button.fancontrol_fan_low
         set_percentage:
           service: button.press
           data:
             entity_id: >
-              {% set id_mapp = {0:'button.fan_low', 50:'button.fan_medium', 100:'button.fan_high'} %}
+              {% set id_mapp = {0:'button.fancontrol_fan_low', 50:'button.fancontrol_fan_medium', 100:'button.fancontrol_fan_high'} %}
               {{ id_mapp[percentage] }}
         speed_count: 2
 ```
