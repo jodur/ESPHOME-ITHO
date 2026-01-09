@@ -1,3 +1,8 @@
+# DEPRECATED: This file is no longer needed with the new native fan component
+# The new component provides a native ESPHome fan that integrates directly with Home Assistant
+# No additional Home Assistant configuration is required
+#
+# Old template fan configuration (for reference only):
 fan:
 - platform: template
     fans:
