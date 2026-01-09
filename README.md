@@ -111,11 +111,9 @@ Add this to your Home Assistant `configuration.yaml` to create a fan entity wher
 **Note:** Replace `fancontrol` in the example below with your ESPHome `device_name` (e.g., `new_esp`).
 
 ```yaml
-fan:
-  - platform: template
-    fans:
-      afzuiging_badkamer:
-        friendly_name: "Afzuiging badkamer"
+template:
+  - fan:
+      - name: "Afzuiging badkamer"
         value_template: >
           {{ "off" if states('sensor.fancontrol_fan_speed') == 'Low' else "on" }}
         percentage_template: >
