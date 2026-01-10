@@ -108,32 +108,41 @@ text_sensor:
 
 Add this to your Home Assistant `configuration.yaml` to create a fan entity where OFF = Low speed (matching the original master branch behavior).
 
-**Note:** Replace `fancontrol` in the example below with your ESPHome `device_name` (e.g., `new_esp`).
+**Note:** Replace `espoverloop` with your ESPHome device name.
 
 ```yaml
 template:
   - fan:
-      - name: "Afzuiging badkamer"
-        value_template: >
-          {{ "off" if states('sensor.fancontrol_fan_speed') == 'Low' else "on" }}
-        percentage_template: >
-          {% set speedperc = {'Low': 0, 'Medium': 50, 'High': 100} %}
-          {{ speedperc[states('sensor.fancontrol_fan_speed')] }}
-        turn_on:
-          service: button.press
-          data:
-            entity_id: button.fancontrol_fan_high
-        turn_off:
-          service: button.press
-          data:
-            entity_id: button.fancontrol_fan_low
-        set_percentage:
-          service: button.press
-          data:
-            entity_id: >
-              {% set id_mapp = {0:'button.fancontrol_fan_low', 50:'button.fancontrol_fan_medium', 100:'button.fancontrol_fan_high'} %}
-              {{ id_mapp[percentage] }}
-        speed_count: 2
+      name: "Afzuiging badkamer"
+      unique_id: afzuiging_badkamer
+      state: >
+        {{ "off" if is_state('sensor.espoverloop_fan_speed', 'Low') else "on" }}
+      preset_mode: >
+        {{ states('sensor.espoverloop_fan_speed') | lower }}
+      preset_modes:
+        - "low"
+        - "medium"
+        - "high"
+      turn_on:
+        # Bij simpel aanzetten → naar medium gaan (meest intuïtief)
+        service: button.press
+        target:
+          entity_id: button.espoverloop_fan_medium
+      turn_off:
+        service: button.press
+        target:
+          entity_id: button.espoverloop_fan_low
+      set_preset_mode:
+        service: button.press
+        target:
+          entity_id: >
+            {% if preset_mode == "low" %}
+              button.espoverloop_fan_low
+            {% elif preset_mode == "medium" %}
+              button.espoverloop_fan_medium
+            {% else %}
+              button.espoverloop_fan_high
+            {% endif %}
 ```
 
 ## Usage in Home Assistant
