@@ -64,6 +64,7 @@ async def to_code(config):
 
     # Add library dependencies
     # Note: SPI is standard Arduino library
-    # ITHO-Lib is pulled from GitHub during compilation
+    # ITHO-Lib sources are bundled in this component directory, because the
+    # upstream repository has no library.json/library.properties, which the
+    # native ESP8266 toolchain requires
     cg.add_library("SPI", None)
-    cg.add_library("https://github.com/jodur/ITHO-Lib#NewLib", None)
