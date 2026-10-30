@@ -313,6 +313,7 @@ void IthoFanHub::process_packet() {
 
 void IthoFan::setup() {
   ESP_LOGCONFIG(TAG, "Setting up Itho Fan...");
+  this->set_supported_preset_modes({"Timer 10min", "Timer 20min", "Timer 30min"});
   
   // Don't set initial state here, let on_boot handle it
   // This prevents conflicts with the on_boot action
@@ -324,9 +325,7 @@ void IthoFan::dump_config() {
 }
 
 fan::FanTraits IthoFan::get_traits() {
-  auto traits = fan::FanTraits(false, true, false, 4);
-  traits.set_supported_preset_modes({"Timer 10min", "Timer 20min", "Timer 30min"});
-  return traits;
+  return fan::FanTraits(false, true, false, 4);
 }
 
 void IthoFan::control(const fan::FanCall &call) {
