@@ -1,22 +1,33 @@
 import esphome.codegen as cg
 import esphome.config_validation as cv
-from esphome.components import spi
+from esphome.components import cc1101
 from esphome.const import CONF_ID
-from esphome import pins
 
 CODEOWNERS = ["@jodur"]
-DEPENDENCIES = []
-AUTO_LOAD = ["fan"]
+DEPENDENCIES = ["cc1101"]
+AUTO_LOAD = ["fan", "sensor", "text_sensor"]
 
 CONF_DEVICE_ID = "device_id"
 CONF_DEVICE_NAME = "device_name"
 CONF_REMOTE_IDS = "remote_ids"
 CONF_REMOTE_ID = "remote_id"
 CONF_ROOM_NAME = "room_name"
-CONF_PIN_INTERRUPT = "interrupt_pin"
+CONF_CC1101_ID = "cc1101_id"
 
 itho_fan_ns = cg.esphome_ns.namespace("itho_fan")
 IthoFanHub = itho_fan_ns.class_("IthoFanHub", cg.Component)
+
+
+def validate_device_id(value):
+    """Device ID: 3 decimal bytes, e.g. "10,87,81"."""
+    value = cv.string(value)
+    parts = value.split(",")
+    if len(parts) != 3:
+        raise cv.Invalid("device_id must be 3 comma separated numbers, e.g. \"10,87,81\"")
+    for part in parts:
+        cv.int_range(min=0, max=255)(cv.int_(part.strip()))
+    return value
+
 
 REMOTE_SCHEMA = cv.Schema(
     {
@@ -28,10 +39,10 @@ REMOTE_SCHEMA = cv.Schema(
 CONFIG_SCHEMA = cv.Schema(
     {
         cv.GenerateID(): cv.declare_id(IthoFanHub),
-        cv.Required(CONF_DEVICE_ID): cv.string,
+        cv.Required(CONF_DEVICE_ID): validate_device_id,
         cv.Optional(CONF_DEVICE_NAME, default="ESPHome"): cv.string,
         cv.Optional(CONF_REMOTE_IDS, default=[]): cv.ensure_list(REMOTE_SCHEMA),
-        cv.Required(CONF_PIN_INTERRUPT): pins.gpio_input_pin_schema,
+        cv.GenerateID(CONF_CC1101_ID): cv.use_id(cc1101.CC1101Component),
     }
 ).extend(cv.COMPONENT_SCHEMA)
 
@@ -58,13 +69,6 @@ async def to_code(config):
     for remote in config[CONF_REMOTE_IDS]:
         cg.add(var.add_remote_id(remote[CONF_REMOTE_ID], remote[CONF_ROOM_NAME]))
 
-    # Set interrupt pin
-    interrupt_pin = await cg.gpio_pin_expression(config[CONF_PIN_INTERRUPT])
-    cg.add(var.set_interrupt_pin(interrupt_pin))
-
-    # Add library dependencies
-    # Note: SPI is standard Arduino library
-    # ITHO-Lib sources are bundled in this component directory, because the
-    # upstream repository has no library.json/library.properties, which the
-    # native ESP8266 toolchain requires
-    cg.add_library("SPI", None)
+    # Use the official ESPHome cc1101 component as radio
+    radio = await cg.get_variable(config[CONF_CC1101_ID])
+    cg.add(var.set_radio(radio))

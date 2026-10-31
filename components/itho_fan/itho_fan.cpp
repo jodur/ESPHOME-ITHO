@@ -12,48 +12,28 @@ static const int TIME_10MIN = 10 * 60;
 static const int TIME_20MIN = 20 * 60;
 static const int TIME_30MIN = 30 * 60;
 
-// Global reference for interrupt handler
-static IthoFanHub *global_itho_hub = nullptr;
-
-void IRAM_ATTR itho_interrupt_handler(IthoFanHub *arg) {
-  if (arg != nullptr) {
-    arg->has_packet_ = true;
-  }
-}
+// Number of transmissions and delay between them
+static const uint8_t COMMAND_REPEAT = 3;
+static const uint8_t COMMAND_DELAY_MS = 40;
+static const uint8_t JOIN_REPEAT = 10;
+static const uint8_t JOIN_DELAY_MS = 40;
+static const uint8_t LEAVE_REPEAT = 30;  // leave must be transmitted for ~1 second
+static const uint8_t LEAVE_DELAY_MS = 4;
+static const size_t MAX_TX_QUEUE = 8;
 
 // IthoFanHub Implementation
 
 void IthoFanHub::setup() {
   ESP_LOGCONFIG(TAG, "Setting up Itho Fan Hub...");
-  
-  global_itho_hub = this;
-  
-  rf_.init();
-  
-  if (interrupt_pin_ != nullptr) {
-    interrupt_pin_->setup();
-    interrupt_pin_->pin_mode(gpio::FLAG_INPUT);
-    interrupt_pin_->attach_interrupt(itho_interrupt_handler, this, gpio::INTERRUPT_FALLING_EDGE);
+  if (radio_ != nullptr) {
+    radio_->register_listener(this);
   }
-  
-  rf_.initReceive();
-  
-  // Set device ID for sending
-  uint8_t id[3];
-  sscanf(device_id_.c_str(), "%hhu,%hhu,%hhu", &id[0], &id[1], &id[2]);
-  rf_.setDeviceID(id[0], id[1], id[2]);
-  
   init_complete_ = true;
   last_id_ = "System";
-  
-  ESP_LOGCONFIG(TAG, "Itho Fan Hub setup complete");
 }
 
 void IthoFanHub::loop() {
-  if (has_packet_) {
-    has_packet_ = false;
-    process_packet();
-  }
+  process_tx_queue();
   
   // Handle timer countdown
   static uint32_t last_update = 0;
@@ -81,10 +61,8 @@ void IthoFanHub::loop() {
 
 void IthoFanHub::dump_config() {
   ESP_LOGCONFIG(TAG, "Itho Fan Hub:");
-  ESP_LOGCONFIG(TAG, "  Device ID: %s", device_id_.c_str());
-  if (interrupt_pin_ != nullptr) {
-    LOG_PIN("  Interrupt Pin: ", interrupt_pin_);
-  }
+  ESP_LOGCONFIG(TAG, "  Device ID: %u,%u,%u", device_id_[0], device_id_[1], device_id_[2]);
+  ESP_LOGCONFIG(TAG, "  Device Name: %s", device_name_.c_str());
   ESP_LOGCONFIG(TAG, "  Registered Remotes: %d", remotes_.size());
   for (const auto &remote : remotes_) {
     ESP_LOGCONFIG(TAG, "    - ID: %s, Room: %s", remote.id.c_str(), remote.room_name.c_str());
@@ -92,70 +70,90 @@ void IthoFanHub::dump_config() {
 }
 
 void IthoFanHub::set_device_id(uint8_t id1, uint8_t id2, uint8_t id3) {
-  char buffer[16];
-  snprintf(buffer, sizeof(buffer), "%d,%d,%d", id1, id2, id3);
-  device_id_ = buffer;
+  device_id_[0] = id1;
+  device_id_[1] = id2;
+  device_id_[2] = id3;
 }
 
 void IthoFanHub::add_remote_id(const std::string &id, const std::string &room_name) {
   remotes_.push_back({id, room_name});
 }
 
+void IthoFanHub::transmit(IthoCommand command, uint8_t repeat, uint8_t delay_ms) {
+  if (radio_ == nullptr) {
+    ESP_LOGE(TAG, "No cc1101 radio configured");
+    return;
+  }
+  if (tx_queue_.size() >= MAX_TX_QUEUE) {
+    ESP_LOGW(TAG, "Transmit queue full, command dropped");
+    return;
+  }
+  packet_counter_++;
+  tx_queue_.push_back({itho_build_packet(command, device_id_, packet_counter_), repeat, delay_ms});
+  process_tx_queue();
+}
+
+void IthoFanHub::process_tx_queue() {
+  if (tx_queue_.empty() || (int32_t) (millis() - next_tx_) < 0) {
+    return;
+  }
+  Transmission &tx = tx_queue_.front();
+  if (radio_->transmit_packet(tx.packet) != cc1101::CC1101Error::NONE) {
+    ESP_LOGW(TAG, "Transmission failed");
+  }
+  next_tx_ = millis() + tx.delay_ms;
+  if (--tx.remaining == 0) {
+    tx_queue_.pop_front();
+  }
+}
+
 void IthoFanHub::send_command(uint8_t command) {
-  noInterrupts();
-  
   switch (command) {
     case 1:
-      rf_.sendCommand(IthoLow);
+      transmit(ITHO_LOW, COMMAND_REPEAT, COMMAND_DELAY_MS);
       set_state(1, 0, device_name_);
       break;
     case 2:
-      rf_.sendCommand(IthoMedium);
+      transmit(ITHO_MEDIUM, COMMAND_REPEAT, COMMAND_DELAY_MS);
       set_state(2, 0, device_name_);
       break;
     case 3:
-      rf_.sendCommand(IthoHigh);
+      transmit(ITHO_HIGH, COMMAND_REPEAT, COMMAND_DELAY_MS);
       set_state(3, 0, device_name_);
       break;
     case 4:
-      rf_.sendCommand(IthoFull);
+      transmit(ITHO_FULL, COMMAND_REPEAT, COMMAND_DELAY_MS);
       set_state(4, 0, device_name_);
       break;
     case 13:
-      rf_.sendCommand(IthoTimer1);
+      transmit(ITHO_TIMER1, COMMAND_REPEAT, COMMAND_DELAY_MS);
       set_state(13, TIME_10MIN, device_name_);
       break;
     case 23:
-      rf_.sendCommand(IthoTimer2);
+      transmit(ITHO_TIMER2, COMMAND_REPEAT, COMMAND_DELAY_MS);
       set_state(23, TIME_20MIN, device_name_);
       break;
     case 33:
-      rf_.sendCommand(IthoTimer3);
+      transmit(ITHO_TIMER3, COMMAND_REPEAT, COMMAND_DELAY_MS);
       set_state(33, TIME_30MIN, device_name_);
       break;
+    default:
+      ESP_LOGW(TAG, "Unknown command %u", command);
+      return;
   }
-  
-  interrupts();
-  rf_.initReceive();
-  
+
   if (fan_ != nullptr) {
     fan_->update_state();
   }
 }
 
 void IthoFanHub::send_join() {
-  noInterrupts();
-  rf_.sendCommand(IthoJoin);
-  interrupts();
-  rf_.initReceive();
+  transmit(ITHO_JOIN, JOIN_REPEAT, JOIN_DELAY_MS);
   ESP_LOGI(TAG, "Join command sent");
 }
 
 void IthoFanHub::send_leave() {
-  noInterrupts();
-  rf_.sendCommand(IthoLeave);
-  interrupts();
-  rf_.initReceive();
+  transmit(ITHO_LEAVE, LEAVE_REPEAT, LEAVE_DELAY_MS);
   ESP_LOGI(TAG, "Leave command sent");
 }
 
@@ -218,95 +216,75 @@ int IthoFanHub::get_remote_index(const std::string &id) {
   return -1;
 }
 
-void IthoFanHub::process_packet() {
-  noInterrupts();
-  
-  if (rf_.checkForNewPacket()) {
-    IthoCommand cmd = rf_.getLastCommand();
-    String id_str = rf_.getLastIDstr();
-    std::string id = std::string(id_str.c_str());
-    
-    int index = get_remote_index(id);
-    
-    if (index >= 0) {
-      std::string room_name = remotes_[index].room_name;
-      
-      switch (cmd) {
-        case IthoLow:
-        case DucoLow:
-          ESP_LOGD(TAG, "Received Low from %s", room_name.c_str());
-          if (state_ != 1) {
-            set_state(1, 0, room_name);
-          } else {
-            ESP_LOGD(TAG, "Already in Low state");
-          }
-          break;
-        case IthoMedium:
-        case DucoMedium:
-          ESP_LOGD(TAG, "Received Medium from %s", room_name.c_str());
-          if (state_ != 2) {
-            set_state(2, 0, room_name);
-          } else {
-            ESP_LOGD(TAG, "Already in Medium state");
-          }
-          break;
-        case IthoHigh:
-        case DucoHigh:
-          ESP_LOGD(TAG, "Received High from %s", room_name.c_str());
-          if (state_ != 3) {
-            set_state(3, 0, room_name);
-          } else {
-            ESP_LOGD(TAG, "Already in High state");
-          }
-          break;
-        case IthoFull:
-          ESP_LOGD(TAG, "Received Full from %s", room_name.c_str());
-          if (state_ != 4) {
-            set_state(4, 0, room_name);
-          } else {
-            ESP_LOGD(TAG, "Already in Full state");
-          }
-          break;
-        case IthoTimer1:
-          ESP_LOGD(TAG, "Received Timer1 from %s", room_name.c_str());
-          if (state_ != 13) {
-            set_state(13, TIME_10MIN, room_name);
-          } else {
-            ESP_LOGD(TAG, "Already in Timer1 state, resetting timer");
-            set_state(13, TIME_10MIN, room_name);  // Reset timer even if already in timer mode
-          }
-          break;
-        case IthoTimer2:
-          ESP_LOGD(TAG, "Received Timer2 from %s", room_name.c_str());
-          if (state_ != 23) {
-            set_state(23, TIME_20MIN, room_name);
-          } else {
-            ESP_LOGD(TAG, "Already in Timer2 state, resetting timer");
-            set_state(23, TIME_20MIN, room_name);  // Reset timer even if already in timer mode
-          }
-          break;
-        case IthoTimer3:
-          ESP_LOGD(TAG, "Received Timer3 from %s", room_name.c_str());
-          if (state_ != 33) {
-            set_state(33, TIME_30MIN, room_name);
-          } else {
-            ESP_LOGD(TAG, "Already in Timer3 state, resetting timer");
-            set_state(33, TIME_30MIN, room_name);  // Reset timer even if already in timer mode
-          }
-          break;
-        default:
-          break;
-      }
-      
-      if (fan_ != nullptr) {
-        fan_->update_state();
-      }
-    } else {
-      ESP_LOGV(TAG, "Ignored device-id: %s", id.c_str());
-    }
+void IthoFanHub::on_packet(const std::vector<uint8_t> &packet, float freq_offset, float rssi, uint8_t lqi) {
+  IthoMessage msg;
+  if (!itho_decode(packet, msg)) {
+    return;  // not an Itho message
   }
-  
-  interrupts();
+  IthoCommand cmd = itho_parse_command(msg);
+
+  // Remote ID in the same notation as before (ITHO-Lib getLastIDstr): hex without leading zeros
+  char id[12];
+  snprintf(id, sizeof(id), "%x,%x,%x", msg.device_id()[0], msg.device_id()[1], msg.device_id()[2]);
+  ESP_LOGV(TAG, "Packet from %s, command %u, rssi %.1f dBm", id, cmd, rssi);
+
+  int index = get_remote_index(id);
+  if (index < 0) {
+    ESP_LOGD(TAG, "Ignored device-id: %s", id);
+    return;
+  }
+  const std::string &room_name = remotes_[index].room_name;
+
+  int state;
+  int timer = 0;
+  const char *name;
+  switch (cmd) {
+    case ITHO_LOW:
+      state = 1;
+      name = "Low";
+      break;
+    case ITHO_MEDIUM:
+      state = 2;
+      name = "Medium";
+      break;
+    case ITHO_HIGH:
+      state = 3;
+      name = "High";
+      break;
+    case ITHO_FULL:
+      state = 4;
+      name = "Full";
+      break;
+    case ITHO_TIMER1:
+      state = 13;
+      timer = TIME_10MIN;
+      name = "Timer1";
+      break;
+    case ITHO_TIMER2:
+      state = 23;
+      timer = TIME_20MIN;
+      name = "Timer2";
+      break;
+    case ITHO_TIMER3:
+      state = 33;
+      timer = TIME_30MIN;
+      name = "Timer3";
+      break;
+    default:
+      return;
+  }
+
+  ESP_LOGD(TAG, "Received %s from %s", name, room_name.c_str());
+  if (state_ == state && timer == 0) {
+    ESP_LOGD(TAG, "Already in %s state", name);
+    return;
+  }
+  // Timer commands always (re)start the timer
+  set_state(state, timer, room_name);
+
+  if (fan_ != nullptr) {
+    fan_->update_state();
+  }
 }
 
 // IthoFan Implementation
