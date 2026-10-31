@@ -4,9 +4,9 @@
 #include "esphome/components/fan/fan.h"
 #include "esphome/components/sensor/sensor.h"
 #include "esphome/components/text_sensor/text_sensor.h"
-#include "esphome/core/hal.h"
-#include "esphome/core/gpio.h"
-#include "IthoCC1101.h"
+#include "esphome/components/cc1101/cc1101.h"
+#include "itho_protocol.h"
+#include <deque>
 #include <vector>
 #include <string>
 
@@ -18,7 +18,7 @@ struct RemoteInfo {
   std::string room_name;
 };
 
-class IthoFanHub : public Component {
+class IthoFanHub : public Component, public cc1101::CC1101Listener {
  public:
   void setup() override;
   void loop() override;
@@ -27,7 +27,10 @@ class IthoFanHub : public Component {
   void set_device_id(uint8_t id1, uint8_t id2, uint8_t id3);
   void set_device_name(const std::string &name) { device_name_ = name; }
   void add_remote_id(const std::string &id, const std::string &room_name);
-  void set_interrupt_pin(InternalGPIOPin *pin) { interrupt_pin_ = pin; }
+  void set_radio(cc1101::CC1101Component *radio) { radio_ = radio; }
+
+  // Called by the cc1101 component for every received packet
+  void on_packet(const std::vector<uint8_t> &packet, float freq_offset, float rssi, uint8_t lqi) override;
   
   void send_command(uint8_t command);
   void send_join();
@@ -36,7 +39,6 @@ class IthoFanHub : public Component {
   int get_state() const { return state_; }
   int get_timer() const { return timer_; }
   std::string get_last_id() const { return last_id_; }
-  InternalGPIOPin *get_interrupt_pin() const { return interrupt_pin_; }
   
   void register_fan(class IthoFan *fan) { fan_ = fan; }
   void register_state_sensor(sensor::Sensor *sensor) { state_sensor_ = sensor; }
@@ -45,22 +47,27 @@ class IthoFanHub : public Component {
   void register_controller_sensor(text_sensor::TextSensor *sensor) { controller_sensor_ = sensor; }
   void publish_sensors();
   void on_homeassistant_connected();
-  
-  // Public member accessed by interrupt handler
-  bool has_packet_{false};
 
  protected:
-  friend void IRAM_ATTR itho_interrupt_handler();
-  
-  void process_packet();
+  struct Transmission {
+    std::vector<uint8_t> packet;
+    uint8_t remaining;
+    uint8_t delay_ms;
+  };
+
+  void transmit(IthoCommand command, uint8_t repeat, uint8_t delay_ms);
+  void process_tx_queue();
   int get_remote_index(const std::string &id);
   void set_state(int state, int timer, const std::string &id);
-  
-  IthoCC1101 rf_;
+
+  cc1101::CC1101Component *radio_{nullptr};
+  std::deque<Transmission> tx_queue_;
+  uint32_t next_tx_{0};
+  uint8_t packet_counter_{0};
+
   std::vector<RemoteInfo> remotes_;
-  std::string device_id_{"ESPHOME"};
+  uint8_t device_id_[3]{10, 87, 81};
   std::string device_name_{"ESPHome"};
-  InternalGPIOPin *interrupt_pin_{nullptr};
   
   int state_{1};
   int old_state_{1};
