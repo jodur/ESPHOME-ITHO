@@ -3,8 +3,15 @@
 ESPHome custom component for Itho ventilation units using CC1101 RF communication.
 
 The radio is handled by the official [ESPHome CC1101 component](https://esphome.io/components/cc1101/)
-(ESPHome 2025.12 or newer). The `itho_fan` component only contains the Itho protocol
-(message encoding/decoding) and the fan state logic.
+(ESPHome 2025.12 or newer). The `itho_fan` component in this repository only contains the
+Itho protocol (message encoding/decoding) and the fan state logic. **No external libraries
+are needed** - everything is in [`components/itho_fan`](components/itho_fan):
+
+| File | Contents |
+|------|----------|
+| `itho_protocol.h/.cpp` | Itho RF message encoding/decoding and command detection |
+| `itho_fan.h/.cpp` | Fan state, timer, sensors, remote handling, sending via the `cc1101` component |
+| `__init__.py`, `fan.py` | ESPHome configuration schema |
 
 This component provides **button-based control** with status sensors, designed for use with Home Assistant template fans to replicate the original master branch behavior where OFF state represents Low speed.
 
@@ -13,7 +20,7 @@ This component provides **button-based control** with status sensors, designed f
 - **Button Controls**: Direct speed control (Low, Medium, High)
 - **RF Communication**: Both send and receive commands via CC1101
 - **Status Sensors**: String-based fan speed sensor and numeric speed sensor
-- **Timer Support**: 10, 20, and 30-minute timer commands
+- **Timer Support**: 10, 20, and 30-minute timer commands with countdown
 - **Remote Tracking**: Identifies which remote/room triggered the state change
 - **Device Name**: Customizable friendly name for the ESP device
 - **Official CC1101 driver**: Uses the ESPHome `cc1101` component, no bundled radio library
@@ -36,11 +43,18 @@ This component provides **button-based control** with status sensors, designed f
 | MISO | D6 | GPIO12 | SPI Data In |
 | SCK | D5 | GPIO14 | SPI Clock |
 | CSN | D8 | GPIO15 | SPI Chip Select |
-| GDO0 | D1 | GPIO5 | Interrupt pin (packet received indicator) |
+| GDO0 | D1 | GPIO5 | Packet received indicator (`cc1101: gdo0_pin`) |
 | GDO2 | - | - | Not connected |
 | ANT | - | - | Connect antenna for proper RF range |
 
 ## Installation
+
+Requires **ESPHome 2025.12 or newer** (official `cc1101` component).
+
+ESPHome loads the `itho_fan` component from this repository with
+[`external_components`](https://esphome.io/components/external_components/). This is only
+the ESPHome mechanism to include a component that is not part of ESPHome itself; there are
+no other dependencies.
 
 ### Option 1: Local Component (Recommended for Development)
 
@@ -55,7 +69,7 @@ external_components:
     components: [itho_fan]
 ```
 
-### Option 2: External Git Repository
+### Option 2: Directly from GitHub
 
 ```yaml
 external_components:
@@ -268,7 +282,7 @@ If running multiple ESPs in parallel (e.g., testing alongside the old master bra
 
 - Give each ESP a **different** `device_id` (e.g., "10,87,81" and "10,87,82")
 - Add the other ESP's `device_id` to each ESP's `remote_ids` list
-- This prevents the ITHO-Lib from filtering out packets from the other ESP
+- Otherwise packets from the other ESP are ignored
 - Both ESPs will see each other's RF transmissions and external remote commands
 
 Example for second ESP:
@@ -324,7 +338,7 @@ Speed/timer commands are sent **3 times**, JOIN **10 times** and LEAVE **30 time
 
 Based on the original work from:
 - [esphome_c1101](https://github.com/CoMPaTech/esphome_c1101)
-- [ITHO-Lib](https://github.com/jodur/ITHO-Lib)
+- [ITHO-Lib](https://github.com/jodur/ITHO-Lib) - Itho protocol (ported to `itho_protocol.cpp`, the library itself is no longer used)
 - [jodur/ESPEASY_Plugin_ITHO](https://github.com/jodur/ESPEASY_Plugin_ITHO) - Protocol verification
 - [Ronaldhiemstra/esphome-itho](https://github.com/Ronaldhiemstra/esphome-itho) - Itho settings for the official ESPHome CC1101 component
 
