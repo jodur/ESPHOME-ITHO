@@ -28,7 +28,7 @@ This component provides **button-based control** with status sensors, designed f
 
 ## Hardware Requirements
 
-- ESP8266 (D1 Mini or compatible) - tested and working
+- ESP8266 (D1 Mini or compatible) - tested and working (ESPHome 2026.10.1)
 - CC1101 RF Module (868MHz version for EU)
 - Power Supply: 5V for ESP8266
 - Antenna: Connected to CC1101 ANT pin (critical for range!)
@@ -43,9 +43,18 @@ This component provides **button-based control** with status sensors, designed f
 | MISO | D6 | GPIO12 | SPI Data In |
 | SCK | D5 | GPIO14 | SPI Clock |
 | CSN | D8 | GPIO15 | SPI Chip Select |
-| GDO0 | D1 | GPIO5 | Packet received indicator (`cc1101: gdo0_pin`) |
-| GDO2 | - | - | Not connected |
+| GDO0 or GDO2 | D1 | GPIO5 | Packet received indicator (`cc1101: gdo0_pin`), see note below |
 | ANT | - | - | Connect antenna for proper RF range |
+
+**GDO0 or GDO2:** The `cc1101` component uses `gdo0_pin` as "packet received" input. The `itho_fan`
+component configures both GDO0 and GDO2 of the CC1101 for this function, so D1 may be wired to
+either pin (boards wired for the ESPEasy Itho plugin use GDO2). Leave the other pin unconnected.
+If D1 is wired to a pin that is not configured this way, the log is flooded with
+`RX FIFO overflow, flushing` warnings.
+
+At startup the `itho_fan` component logs the main CC1101 registers (read back from the chip),
+which helps diagnosing radio problems. Expected values:
+`IOCFG2=0x01 IOCFG0=0x01 FIFOTHR=0x0F SYNC=0xABFE PKTLEN=63 PKTCTRL1=0x00 PKTCTRL0=0x00 MDMCFG2=0x02 MCSM1=0x30`.
 
 ## Installation
 
