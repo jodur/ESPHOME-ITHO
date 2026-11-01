@@ -25,11 +25,36 @@ external_components:
       path: components
     components: [itho_fan]
 
+spi:
+  clk_pin: D5    # GPIO14 - CC1101 SCK
+  miso_pin: D6   # GPIO12 - CC1101 MISO
+  mosi_pin: D7   # GPIO13 - CC1101 MOSI
+
+# Official ESPHome CC1101 component (ESPHome 2025.12+), configured for Itho:
+# 868.2999 MHz, 2-FSK, 38.383 kBaud, 50 kHz deviation, sync word 0xAB 0xFE,
+# fixed 63 byte packets, no CRC, no whitening.
+cc1101:
+  cs_pin: D8      # GPIO15 - CC1101 CSN
+  gdo0_pin: D1    # GPIO5  - CC1101 GDO0 (packet received)
+  frequency: 868.2999MHz
+  modulation_type: 2-FSK
+  symbol_rate: 38383
+  filter_bandwidth: 203kHz
+  fsk_deviation: 50kHz
+  output_power: 10
+  packet_mode: true
+  num_preamble: 4
+  sync_mode: 16/16
+  sync1: 0xAB
+  sync0: 0xFE
+  packet_length: 63
+  crc_enable: false
+  whitening: false
+
 itho_fan:
   id: itho_hub
   device_id: "10,87,81"
   device_name: "New ESP"
-  interrupt_pin: D1
   remote_ids:
     - remote_id: "51,40,61"
       room_name: "Badkamer"
@@ -116,12 +141,5 @@ api:
 
 ota:
   - platform: esphome
-    on_begin:
-      then:
-        - lambda: |-
-            ESP_LOGI("custom", "Disabling interrupts for OTA");
-            if (id(itho_hub).get_interrupt_pin() != nullptr) {
-              id(itho_hub).get_interrupt_pin()->detach_interrupt();
-            }
 
 # For Home Assistant template fan configuration example, see README.md
