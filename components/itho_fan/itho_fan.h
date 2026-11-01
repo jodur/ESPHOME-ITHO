@@ -28,6 +28,10 @@ class IthoFanHub : public Component, public cc1101::CC1101Listener {
   void set_device_name(const std::string &name) { device_name_ = name; }
   void add_remote_id(const std::string &id, const std::string &room_name);
   void set_radio(cc1101::CC1101Component *radio) { radio_ = radio; }
+  // Set when the interrupt pin (cc1101 gdo0_pin) is wired to GDO2 of the CC1101
+  // instead of GDO0 (wiring of the ESPEasy Itho plugin)
+  void set_use_gdo2(bool use_gdo2) { use_gdo2_ = use_gdo2; }
+  float get_setup_priority() const override { return setup_priority::DATA - 1.0f; }
 
   // Called by the cc1101 component for every received packet
   void on_packet(const std::vector<uint8_t> &packet, float freq_offset, float rssi, uint8_t lqi) override;
@@ -64,6 +68,7 @@ class IthoFanHub : public Component, public cc1101::CC1101Listener {
   std::deque<Transmission> tx_queue_;
   uint32_t next_tx_{0};
   uint8_t packet_counter_{0};
+  bool use_gdo2_{false};
 
   std::vector<RemoteInfo> remotes_;
   uint8_t device_id_[3]{10, 87, 81};

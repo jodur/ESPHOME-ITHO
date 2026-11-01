@@ -47,6 +47,10 @@ This component provides **button-based control** with status sensors, designed f
 | GDO2 | - | - | Not connected |
 | ANT | - | - | Connect antenna for proper RF range |
 
+**GDO2 instead of GDO0 on D1?** Boards wired for the ESPEasy Itho plugin often have **GDO2** on D1.
+No hardware change is needed: keep `gdo0_pin: D1` and add `use_gdo2: true` to `itho_fan:`.
+Without it, the log is flooded with `RX FIFO overflow, flushing` warnings and nothing is received.
+
 ## Installation
 
 Requires **ESPHome 2025.12 or newer** (official `cc1101` component).
@@ -245,6 +249,7 @@ data:
 | `device_id` | Yes | - | ESP device ID for RF transmission (decimal, format: "X,X,X") |
 | `device_name` | No | "ESPHome" | Friendly name shown in Last Control Source sensor |
 | `cc1101_id` | No | - | ID of the `cc1101` component (only needed with multiple radios) |
+| `use_gdo2` | No | false | Set to `true` when the interrupt pin (`cc1101: gdo0_pin`) is wired to **GDO2** of the CC1101 instead of GDO0 |
 | `remote_ids` | No | [] | List of remote IDs to recognize |
 
 The CC1101 pins (`cs_pin`, `gdo0_pin`) and SPI pins are configured in the `spi:` and `cc1101:` sections.

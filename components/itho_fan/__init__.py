@@ -13,6 +13,7 @@ CONF_REMOTE_IDS = "remote_ids"
 CONF_REMOTE_ID = "remote_id"
 CONF_ROOM_NAME = "room_name"
 CONF_CC1101_ID = "cc1101_id"
+CONF_USE_GDO2 = "use_gdo2"
 
 itho_fan_ns = cg.esphome_ns.namespace("itho_fan")
 IthoFanHub = itho_fan_ns.class_("IthoFanHub", cg.Component)
@@ -43,6 +44,9 @@ CONFIG_SCHEMA = cv.Schema(
         cv.Optional(CONF_DEVICE_NAME, default="ESPHome"): cv.string,
         cv.Optional(CONF_REMOTE_IDS, default=[]): cv.ensure_list(REMOTE_SCHEMA),
         cv.GenerateID(CONF_CC1101_ID): cv.use_id(cc1101.CC1101Component),
+        # Set to true when the cc1101 gdo0_pin is physically wired to GDO2
+        # of the CC1101 module (ESPEasy Itho plugin wiring)
+        cv.Optional(CONF_USE_GDO2, default=False): cv.boolean,
     }
 ).extend(cv.COMPONENT_SCHEMA)
 
@@ -72,3 +76,4 @@ async def to_code(config):
     # Use the official ESPHome cc1101 component as radio
     radio = await cg.get_variable(config[CONF_CC1101_ID])
     cg.add(var.set_radio(radio))
+    cg.add(var.set_use_gdo2(config[CONF_USE_GDO2]))
