@@ -21,12 +21,36 @@ static const uint8_t LEAVE_REPEAT = 30;  // leave must be transmitted for ~1 sec
 static const uint8_t LEAVE_DELAY_MS = 4;
 static const size_t MAX_TX_QUEUE = 8;
 
+// CC1101 registers used for configuration/diagnostics
+static const uint8_t CC1101_IOCFG2 = 0x00;
+static const uint8_t CC1101_GDO_CFG_RX_FIFO = 0x01;  // asserts on RX FIFO threshold or end of packet
+
 // IthoFanHub Implementation
+
+uint8_t IthoFanHub::read_radio_register_(uint8_t reg) {
+  radio_->enable();
+  // config registers: single read (0x80); status registers (>= 0x30) need the burst bit (0xC0)
+  radio_->write_byte(reg | (reg >= 0x30 ? 0xC0 : 0x80));
+  uint8_t value = radio_->read_byte();
+  radio_->disable();
+  return value;
+}
+
+void IthoFanHub::write_radio_register_(uint8_t reg, uint8_t value) {
+  radio_->enable();
+  radio_->write_byte(reg);
+  radio_->write_byte(value);
+  radio_->disable();
+}
 
 void IthoFanHub::setup() {
   ESP_LOGCONFIG(TAG, "Setting up Itho Fan Hub...");
   if (radio_ != nullptr) {
     radio_->register_listener(this);
+    // The cc1101 component signals "packet received" on GDO0 only. Give GDO2
+    // the same function, so boards with GDO2 wired to the interrupt pin
+    // (ESPEasy Itho plugin wiring) also work. Harmless when GDO2 is unused.
+    write_radio_register_(CC1101_IOCFG2, CC1101_GDO_CFG_RX_FIFO);
   }
   init_complete_ = true;
   last_id_ = "System";
@@ -63,6 +87,15 @@ void IthoFanHub::dump_config() {
   ESP_LOGCONFIG(TAG, "Itho Fan Hub:");
   ESP_LOGCONFIG(TAG, "  Device ID: %u,%u,%u", device_id_[0], device_id_[1], device_id_[2]);
   ESP_LOGCONFIG(TAG, "  Device Name: %s", device_name_.c_str());
+  if (radio_ != nullptr) {
+    // Read back the radio configuration (diagnostics)
+    ESP_LOGCONFIG(TAG, "  CC1101 IOCFG2=0x%02X IOCFG0=0x%02X FIFOTHR=0x%02X SYNC=0x%02X%02X PKTLEN=%u",
+                  read_radio_register_(0x00), read_radio_register_(0x02), read_radio_register_(0x03),
+                  read_radio_register_(0x04), read_radio_register_(0x05), read_radio_register_(0x06));
+    ESP_LOGCONFIG(TAG, "  CC1101 PKTCTRL1=0x%02X PKTCTRL0=0x%02X MDMCFG2=0x%02X MCSM1=0x%02X MARCSTATE=0x%02X RXBYTES=0x%02X",
+                  read_radio_register_(0x07), read_radio_register_(0x08), read_radio_register_(0x12),
+                  read_radio_register_(0x17), read_radio_register_(0x35), read_radio_register_(0x3B));
+  }
   ESP_LOGCONFIG(TAG, "  Registered Remotes: %d", remotes_.size());
   for (const auto &remote : remotes_) {
     ESP_LOGCONFIG(TAG, "    - ID: %s, Room: %s", remote.id.c_str(), remote.room_name.c_str());

@@ -28,6 +28,8 @@ class IthoFanHub : public Component, public cc1101::CC1101Listener {
   void set_device_name(const std::string &name) { device_name_ = name; }
   void add_remote_id(const std::string &id, const std::string &room_name);
   void set_radio(cc1101::CC1101Component *radio) { radio_ = radio; }
+  // Run after the cc1101 component has configured the radio
+  float get_setup_priority() const override { return setup_priority::DATA - 1.0f; }
 
   // Called by the cc1101 component for every received packet
   void on_packet(const std::vector<uint8_t> &packet, float freq_offset, float rssi, uint8_t lqi) override;
@@ -55,6 +57,8 @@ class IthoFanHub : public Component, public cc1101::CC1101Listener {
     uint8_t delay_ms;
   };
 
+  uint8_t read_radio_register_(uint8_t reg);
+  void write_radio_register_(uint8_t reg, uint8_t value);
   void transmit(IthoCommand command, uint8_t repeat, uint8_t delay_ms);
   void process_tx_queue();
   int get_remote_index(const std::string &id);
