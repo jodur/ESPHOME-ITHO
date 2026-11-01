@@ -77,6 +77,22 @@ void IthoFanHub::dump_config() {
   ESP_LOGCONFIG(TAG, "  Device ID: %u,%u,%u", device_id_[0], device_id_[1], device_id_[2]);
   ESP_LOGCONFIG(TAG, "  Device Name: %s", device_name_.c_str());
   ESP_LOGCONFIG(TAG, "  Interrupt on: %s", use_gdo2_ ? "GDO2" : "GDO0");
+  if (radio_ != nullptr) {
+    // Read back the radio configuration (diagnostics)
+    auto rd = [this](uint8_t reg) {
+      radio_->enable();
+      // config registers: single read (0x80), status registers (>= 0x30): burst bit (0xC0)
+      radio_->write_byte(reg | (reg >= 0x30 ? 0xC0 : 0x80));
+      uint8_t v = radio_->read_byte();
+      radio_->disable();
+      return v;
+    };
+    ESP_LOGCONFIG(TAG, "  CC1101 registers: IOCFG2=0x%02X IOCFG0=0x%02X FIFOTHR=0x%02X SYNC=0x%02X%02X",
+                  rd(0x00), rd(0x02), rd(0x03), rd(0x04), rd(0x05));
+    ESP_LOGCONFIG(TAG, "                    PKTLEN=%u PKTCTRL1=0x%02X PKTCTRL0=0x%02X MDMCFG2=0x%02X MCSM1=0x%02X",
+                  rd(0x06), rd(0x07), rd(0x08), rd(0x12), rd(0x17));
+    ESP_LOGCONFIG(TAG, "                    MARCSTATE=0x%02X RXBYTES=0x%02X", rd(0x35), rd(0x3B));
+  }
   ESP_LOGCONFIG(TAG, "  Registered Remotes: %d", remotes_.size());
   for (const auto &remote : remotes_) {
     ESP_LOGCONFIG(TAG, "    - ID: %s, Room: %s", remote.id.c_str(), remote.room_name.c_str());
