@@ -27,19 +27,6 @@ void IthoFanHub::setup() {
   ESP_LOGCONFIG(TAG, "Setting up Itho Fan Hub...");
   if (radio_ != nullptr) {
     radio_->register_listener(this);
-    if (use_gdo2_) {
-      // The cc1101 component signals "packet received" on GDO0 (IOCFG0 = 0x01).
-      // Give GDO2 the same function (IOCFG2 = 0x01: asserts when the RX FIFO
-      // threshold or end of packet is reached), so a board with GDO2 wired to
-      // the interrupt pin works without hardware changes.
-      static const uint8_t REG_IOCFG2 = 0x00;
-      static const uint8_t GDO_CFG_RX_FIFO = 0x01;
-      radio_->enable();
-      radio_->write_byte(REG_IOCFG2);
-      radio_->write_byte(GDO_CFG_RX_FIFO);
-      radio_->disable();
-      ESP_LOGCONFIG(TAG, "GDO2 configured as packet received output");
-    }
   }
   init_complete_ = true;
   last_id_ = "System";
@@ -76,7 +63,6 @@ void IthoFanHub::dump_config() {
   ESP_LOGCONFIG(TAG, "Itho Fan Hub:");
   ESP_LOGCONFIG(TAG, "  Device ID: %u,%u,%u", device_id_[0], device_id_[1], device_id_[2]);
   ESP_LOGCONFIG(TAG, "  Device Name: %s", device_name_.c_str());
-  ESP_LOGCONFIG(TAG, "  Interrupt on: %s", use_gdo2_ ? "GDO2" : "GDO0");
   ESP_LOGCONFIG(TAG, "  Registered Remotes: %d", remotes_.size());
   for (const auto &remote : remotes_) {
     ESP_LOGCONFIG(TAG, "    - ID: %s, Room: %s", remote.id.c_str(), remote.room_name.c_str());
